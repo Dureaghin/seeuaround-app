@@ -23,7 +23,7 @@ import {
 } from "../crypto.js";
 import { query } from "../db.js";
 import { buildMeState, runMatchingForUser } from "../me-state.js";
-import { config } from "../config.js";
+import { config, getDevAuthCode } from "../config.js";
 
 const GENERIC_AUTH_MSG = {
   ok: true,
@@ -40,7 +40,7 @@ export async function registerRoutes(app: FastifyInstance) {
     const email = normalizeEmail(parsed.data.email);
     if (isDisposableEmail(email)) return GENERIC_AUTH_MSG;
 
-    const code = config.devAuthCode ?? generateCode();
+    const code = getDevAuthCode() ?? generateCode();
     const codeHash = hashToken(code);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
@@ -98,8 +98,10 @@ export async function registerRoutes(app: FastifyInstance) {
     }
     if (row.attempts >= 5) return reply.code(400).send({ error: "code_expired" });
 
+    const devCode = getDevAuthCode();
     const codeHash = hashToken(parsed.data.code);
-    if (!safeEqual(codeHash, row.code_hash)) {
+    const devMatch = devCode !== undefined && parsed.data.code === devCode;
+    if (!devMatch && !safeEqual(codeHash, row.code_hash)) {
       await query(`UPDATE auth_codes SET attempts = attempts + 1 WHERE id = $1`, [row.id]);
       return reply.code(400).send({ error: "invalid_code" });
     }
