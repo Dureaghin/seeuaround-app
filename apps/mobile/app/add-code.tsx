@@ -9,6 +9,7 @@ import {
 } from "../src/lib/friend-code";
 import { useApp } from "../src/context/AppContext";
 import {
+  Actions,
   Button,
   ErrText,
   Eyebrow,
@@ -85,13 +86,15 @@ export default function AddByCodeScreen() {
       {error ? <ErrText>{error}</ErrText> : null}
 
       <Spacer />
-      <Button
-        label="Connect"
-        onPress={onConnect}
-        loading={loading}
-        disabled={code.replace(/[^A-Z0-9]/g, "").length < 10}
-      />
-      <Button label="Cancel" variant="ghost" onPress={() => router.back()} />
+      <Actions>
+        <Button
+          label="Connect"
+          onPress={onConnect}
+          loading={loading}
+          disabled={code.replace(/[^A-Z0-9]/g, "").length < 10}
+        />
+        <Button label="Cancel" variant="ghost" onPress={() => router.back()} />
+      </Actions>
     </Screen>
   );
 }

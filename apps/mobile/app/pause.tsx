@@ -63,7 +63,9 @@ export default function PauseScreen() {
         <Headline>You're sitting out.</Headline>
         <Sub>Your people don't see a paused label. You simply don't come up.</Sub>
         <Spacer />
-        <Button label="Come back" onPress={comeBack} loading={loading} />
+        <Actions>
+          <Button label="Come back" onPress={comeBack} loading={loading} />
+        </Actions>
       </Screen>
     );
   }

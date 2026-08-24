@@ -20,7 +20,7 @@ import { colors, fonts, radius, spacing } from "../lib/theme";
 
 export function Screen({
   children,
-  showLogo = true,
+  showLogo = false,
   bare = false,
 }: {
   children: React.ReactNode;
@@ -113,8 +113,16 @@ export function Button({
   );
 }
 
-export function Actions({ row, children }: { row?: boolean; children: React.ReactNode }) {
-  return <View style={[styles.actions, row && styles.actionsRow]}>{children}</View>;
+export function Actions({
+  row,
+  style,
+  children,
+}: {
+  row?: boolean;
+  style?: object;
+  children: React.ReactNode;
+}) {
+  return <View style={[styles.actions, row && styles.actionsRow, style]}>{children}</View>;
 }
 
 export function TextField(props: {

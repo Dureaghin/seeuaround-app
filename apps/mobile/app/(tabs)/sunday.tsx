@@ -6,6 +6,7 @@ import { api } from "../../src/lib/api";
 import { useApp } from "../../src/context/AppContext";
 import {
   ErrText,
+  Actions,
   Button,
   Eyebrow,
   Headline,
@@ -63,7 +64,9 @@ export default function SundayScreen() {
 
       <Spacer />
       {error ? <ErrText>{error}</ErrText> : null}
-      <Button label={saving ? "Sending…" : "Send it"} onPress={save} loading={saving} />
+      <Actions>
+        <Button label={saving ? "Sending…" : "Send it"} onPress={save} loading={saving} />
+      </Actions>
       <Text style={uiStyles.quiethours}>
         Answer whenever. Nobody gets pinged before 8am their time.
       </Text>

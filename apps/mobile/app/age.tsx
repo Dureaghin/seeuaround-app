@@ -6,6 +6,7 @@ import { api } from "../src/lib/api";
 import { applyPendingFriendCode } from "../src/lib/friend-code";
 import { useApp } from "../src/context/AppContext";
 import {
+  Actions,
   Button,
   DevCheck,
   Eyebrow,
@@ -39,7 +40,7 @@ export default function AgeScreen() {
   }
 
   return (
-    <Screen>
+    <Screen showLogo>
       <Eyebrow>Signing up</Eyebrow>
       <Headline>See U Around is 18+.</Headline>
       <Sub>Your phone already knows your age band. We ask it. It answers yes or no.</Sub>
@@ -59,7 +60,9 @@ export default function AgeScreen() {
       </Text>
 
       <Spacer />
-      <Button label="Continue" onPress={confirm} loading={loading} />
+      <Actions>
+        <Button label="Continue" onPress={confirm} loading={loading} />
+      </Actions>
     </Screen>
   );
 }

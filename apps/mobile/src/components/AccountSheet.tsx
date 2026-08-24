@@ -120,8 +120,8 @@ export function AccountSheet({
                   variant="danger"
                   onPress={() => setStep("delete")}
                 />
+                <Button label="Close" variant="ghost" onPress={onClose} />
               </Actions>
-              <Button label="Close" variant="ghost" onPress={onClose} />
             </>
           ) : (
             <>

@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { BrandIcon } from "../src/components/Logo";
 import { useApp } from "../src/context/AppContext";
-import { Button, Screen, Spacer } from "../src/components/ui";
+import { Button, Actions, Screen, Spacer } from "../src/components/ui";
 import { colors, fonts } from "../src/lib/theme";
 
 function PushCard({
@@ -71,9 +71,9 @@ export default function LockScreen() {
       </View>
 
       <Spacer />
-      <View style={styles.ctaWrap}>
+      <Actions style={{ paddingHorizontal: 26, paddingBottom: 8 }}>
         <Button label="Open the top one" onPress={openTop} />
-      </View>
+      </Actions>
     </Screen>
   );
 }
@@ -121,5 +121,4 @@ const styles = StyleSheet.create({
   },
   pushWhen: { fontFamily: fonts.mono, fontSize: 10, color: colors.dim },
   pushText: { fontSize: 14, lineHeight: 20, color: colors.chalk, marginTop: 5, fontFamily: fonts.body },
-  ctaWrap: { paddingHorizontal: 26, paddingBottom: 8 },
 });

@@ -10,6 +10,7 @@ import {
   resolveFriendCodeParam,
 } from "../../src/lib/friend-code";
 import {
+  Actions,
   Button,
   Eyebrow,
   Fineprint,
@@ -77,7 +78,7 @@ export default function EmailScreen() {
   }
 
   return (
-    <Screen>
+    <Screen showLogo>
       <Eyebrow>Signing up</Eyebrow>
       <Headline>What's your email?</Headline>
       <Sub>
@@ -131,12 +132,14 @@ export default function EmailScreen() {
       {error ? <Text style={uiStyles.err}>{error}</Text> : null}
 
       <Spacer />
-      <Button
-        label="Send me a code"
-        onPress={onContinue}
-        loading={loading}
-        disabled={!email.includes("@")}
-      />
+      <Actions>
+        <Button
+          label="Send me a code"
+          onPress={onContinue}
+          loading={loading}
+          disabled={!email.includes("@")}
+        />
+      </Actions>
       <SmallPrint>18+ only · By continuing you accept the terms</SmallPrint>
     </Screen>
   );

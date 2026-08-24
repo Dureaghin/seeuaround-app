@@ -16,6 +16,7 @@ import {
   resolveFriendCodeParam,
 } from "../../src/lib/friend-code";
 import {
+  Actions,
   Button,
   Eyebrow,
   ErrText,
@@ -109,7 +110,7 @@ export default function CodeScreen() {
       : "Didn't arrive? Send another";
 
   return (
-    <Screen>
+    <Screen showLogo>
       <Eyebrow>Check your email</Eyebrow>
       <Headline>Enter the code.</Headline>
       <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
@@ -127,7 +128,9 @@ export default function CodeScreen() {
       </Pressable>
 
       <Spacer />
-      <Button label="Verify" onPress={onVerify} loading={loading} disabled={code.length !== 6} />
+      <Actions>
+        <Button label="Verify" onPress={onVerify} loading={loading} disabled={code.length !== 6} />
+      </Actions>
       <SmallPrint>The code expires in 10 minutes</SmallPrint>
     </Screen>
   );

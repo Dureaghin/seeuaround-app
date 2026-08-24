@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import { api } from "../src/lib/api";
 import {
+  Actions,
   Button,
   Eyebrow,
   GroupHeader,
@@ -56,7 +57,9 @@ export default function EmptyScreen() {
       ) : null}
 
       <Spacer />
-      <Button label="Add someone new" onPress={() => router.push("/invite")} variant="ghost" />
+      <Actions>
+        <Button label="Add someone new" onPress={() => router.push("/invite")} variant="ghost" />
+      </Actions>
     </Screen>
   );
 }
