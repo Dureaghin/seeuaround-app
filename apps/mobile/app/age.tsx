@@ -3,6 +3,7 @@ import { Text } from "react-native";
 import { useRouter } from "expo-router";
 import { routeToPath } from "../src/lib/resolveRoute";
 import { api } from "../src/lib/api";
+import { applyPendingFriendCode } from "../src/lib/friend-code";
 import { useApp } from "../src/context/AppContext";
 import {
   Button,
@@ -25,6 +26,11 @@ export default function AgeScreen() {
     setLoading(true);
     try {
       await api.confirmAge();
+      try {
+        await applyPendingFriendCode();
+      } catch {
+        // Age confirmation still succeeds if friend-code apply fails transiently.
+      }
       const state = await refresh();
       router.replace(routeToPath(state!) as never);
     } finally {

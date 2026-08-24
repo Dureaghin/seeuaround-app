@@ -10,6 +10,12 @@ import {
   resolveEmailParam,
 } from "../../src/lib/auth-email";
 import {
+  applyPendingFriendCode,
+  recallPendingFriendCode,
+  rememberPendingFriendCode,
+  resolveFriendCodeParam,
+} from "../../src/lib/friend-code";
+import {
   Button,
   Eyebrow,
   ErrText,
@@ -30,13 +36,21 @@ function blurActiveElement() {
 }
 
 export default function CodeScreen() {
-  const params = useLocalSearchParams<{ email?: string | string[] }>();
+  const params = useLocalSearchParams<{ email?: string | string[]; friendCode?: string | string[] }>();
   const router = useRouter();
   const { refresh } = useApp();
   const email = useMemo(
     () => resolveEmailParam(params.email) || recallAuthEmail(),
     [params.email],
   );
+  const friendCode = useMemo(() => {
+    const fromParams = resolveFriendCodeParam(params.friendCode);
+    return fromParams || recallPendingFriendCode();
+  }, [params.friendCode]);
+
+  useEffect(() => {
+    if (friendCode) rememberPendingFriendCode(friendCode);
+  }, [friendCode]);
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -63,6 +77,11 @@ export default function CodeScreen() {
         await registerForPush();
       } catch {
         // Push unavailable on web / Expo Go — auth still succeeded.
+      }
+      try {
+        await applyPendingFriendCode();
+      } catch {
+        // Signup continues even if the friend-code request fails transiently.
       }
       const state = await refresh();
       router.replace(state ? (routeToPath(state) as never) : "/age");

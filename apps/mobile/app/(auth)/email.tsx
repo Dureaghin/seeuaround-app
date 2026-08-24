@@ -1,13 +1,20 @@
-import { useState } from "react";
-import { Text } from "react-native";
-import { useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
+import { Text, View } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { api } from "../../src/lib/api";
 import { rememberAuthEmail } from "../../src/lib/auth-email";
+import {
+  isValidFriendCode,
+  normalizeFriendCode,
+  rememberPendingFriendCode,
+  resolveFriendCodeParam,
+} from "../../src/lib/friend-code";
 import {
   Button,
   Eyebrow,
   Fineprint,
   Headline,
+  Linkish,
   OptIn,
   Screen,
   SmallPrint,
@@ -18,19 +25,50 @@ import {
 } from "../../src/components/ui";
 
 export default function EmailScreen() {
+  const params = useLocalSearchParams<{ friendCode?: string | string[] }>();
   const router = useRouter();
   const [email, setEmail] = useState("");
+  const [friendCode, setFriendCode] = useState("");
+  const [showFriendCode, setShowFriendCode] = useState(false);
   const [optIn, setOptIn] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const presetFriendCode = useMemo(
+    () => resolveFriendCodeParam(params.friendCode),
+    [params.friendCode],
+  );
+
+  useEffect(() => {
+    if (!presetFriendCode) return;
+    setFriendCode(presetFriendCode);
+    setShowFriendCode(true);
+    rememberPendingFriendCode(presetFriendCode);
+  }, [presetFriendCode]);
+
   async function onContinue() {
     setLoading(true);
     setError("");
+    const trimmedEmail = email.trim();
+    const trimmedCode = friendCode.trim();
+
+    if (trimmedCode && !isValidFriendCode(trimmedCode)) {
+      setError("Friend codes look like SU-XXXX-XXXX.");
+      setLoading(false);
+      return;
+    }
+
     try {
-      await api.sendCode(email.trim());
-      rememberAuthEmail(email.trim().toLowerCase());
-      router.replace({ pathname: "/(auth)/code", params: { email: email.trim() } });
+      await api.sendCode(trimmedEmail);
+      rememberAuthEmail(trimmedEmail.toLowerCase());
+      if (trimmedCode) rememberPendingFriendCode(trimmedCode);
+      router.replace({
+        pathname: "/(auth)/code",
+        params: {
+          email: trimmedEmail,
+          ...(trimmedCode ? { friendCode: normalizeFriendCode(trimmedCode) } : {}),
+        },
+      });
     } catch {
       setError("Something went wrong. Try again.");
     } finally {
@@ -53,6 +91,25 @@ export default function EmailScreen() {
         keyboardType="email-address"
         autoCapitalize="none"
       />
+
+      {showFriendCode ? (
+        <>
+          <TextField
+            value={friendCode}
+            onChangeText={(v) => setFriendCode(normalizeFriendCode(v))}
+            placeholder="SU-XXXX-XXXX"
+            autoCapitalize="characters"
+            maxLength={12}
+          />
+          <Sub style={{ maxWidth: undefined, marginTop: 11 }}>
+            You'll connect with this person after you verify — not their whole circle.
+          </Sub>
+        </>
+      ) : (
+        <View style={{ marginTop: 16 }}>
+          <Linkish label="Have a friend's code?" onPress={() => setShowFriendCode(true)} />
+        </View>
+      )}
 
       <Fineprint
         title="What we do with it"

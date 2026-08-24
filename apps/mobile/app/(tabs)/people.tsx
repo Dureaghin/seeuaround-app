@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Text } from "react-native";
+import { Text, View } from "react-native";
+import { useRouter } from "expo-router";
 import { api } from "../../src/lib/api";
 import { useCopyFeedback } from "../../src/lib/copy-feedback";
 import { useApp } from "../../src/context/AppContext";
@@ -9,6 +10,7 @@ import {
   Eyebrow,
   GroupHeader,
   HangoutBanner,
+  Linkish,
   PersonRow,
   QuietLink,
   Screen,
@@ -18,6 +20,7 @@ import {
 } from "../../src/components/ui";
 
 export default function PeopleScreen() {
+  const router = useRouter();
   const { me, refresh } = useApp();
   const [accountOpen, setAccountOpen] = useState(false);
   const [connections, setConnections] = useState<
@@ -63,6 +66,9 @@ export default function PeopleScreen() {
       <Sub style={{ maxWidth: undefined }}>
         Share this to add someone. Both sides accept. Nobody can search for you.
       </Sub>
+      <View style={{ marginTop: 14 }}>
+        <Linkish label="Add by code" onPress={() => router.push("/add-code")} />
+      </View>
 
       {freeTonight.length > 0 ? (
         <>
