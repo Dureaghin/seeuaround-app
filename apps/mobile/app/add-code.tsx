@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { routeToPath } from "../src/lib/resolveRoute";
-import { getToken } from "../src/lib/auth-store";
 import {
   connectWithFriendCode,
   normalizeFriendCode,
@@ -28,24 +27,10 @@ export default function AddByCodeScreen() {
   const [code, setCode] = useState(presetCode);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      const token = await getToken();
-      if (!token) {
-        router.replace({
-          pathname: "/(auth)/email",
-          params: presetCode ? { friendCode: presetCode } : {},
-        });
-        return;
-      }
-      if (presetCode) setCode(presetCode);
-      setReady(true);
-    })();
-  }, [presetCode, router]);
-
-  if (!ready) return null;
+    if (presetCode) setCode(presetCode);
+  }, [presetCode]);
 
   async function onConnect() {
     setLoading(true);

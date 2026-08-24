@@ -14,6 +14,7 @@ import {
   JetBrainsMono_500Medium,
 } from "@expo-google-fonts/jetbrains-mono";
 import { AppProvider } from "../src/context/AppContext";
+import { AuthGate } from "../src/components/AuthGate";
 import { colors } from "../src/lib/theme";
 
 SplashScreen.preventAutoHideAsync();
@@ -41,13 +42,15 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <AppProvider>
         <StatusBar style="light" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.night },
-            animation: "fade",
-          }}
-        />
+        <AuthGate>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.night },
+              animation: "fade",
+            }}
+          />
+        </AuthGate>
       </AppProvider>
     </QueryClientProvider>
   );

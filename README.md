@@ -29,6 +29,8 @@ npm run dev:mobile                        # terminal 2 → Expo (web: http://loc
 
 Local API URL defaults to `http://localhost:3001` in `apps/mobile/src/lib/config.ts`.
 
+Anonymous users can only open auth screens and `/j/:token` invite previews. Everything else (tabs, overlap, thread, pause, etc.) is gated by `AuthGate` and redirects to email sign-in.
+
 ## Product surfaces (recent)
 
 | Feature | Where |
