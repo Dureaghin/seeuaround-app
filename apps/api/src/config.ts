@@ -1,11 +1,9 @@
 const resendConfigured = Boolean(process.env.RESEND_API_KEY?.trim());
 
-/** Read at request time so Railway env updates apply without stale module cache. */
+/** Test OTP until USE_PRODUCTION_AUTH=true (real email + random codes). */
 export function getDevAuthCode(): string | undefined {
-  const fromEnv = process.env.DEV_AUTH_CODE?.trim();
-  if (fromEnv) return fromEnv;
-  if (!resendConfigured) return "123456";
-  return undefined;
+  if (process.env.USE_PRODUCTION_AUTH === "true") return undefined;
+  return process.env.DEV_AUTH_CODE?.trim() || "123456";
 }
 
 export const config = {
@@ -15,7 +13,7 @@ export const config = {
   webUrl: process.env.WEB_URL || "https://seeuaround.com",
   expoAccessToken: process.env.EXPO_ACCESS_TOKEN,
   isProd: process.env.NODE_ENV === "production",
-  authEmailEnabled: resendConfigured,
+  authEmailEnabled: resendConfigured && process.env.USE_PRODUCTION_AUTH === "true",
   get devAuthCode() {
     return getDevAuthCode();
   },
