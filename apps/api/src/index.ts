@@ -15,7 +15,11 @@ async function main() {
 
   const app = Fastify({ logger: true });
 
-  await app.register(cors, { origin: true });
+  await app.register(cors, {
+    origin: true,
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  });
   await app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
   await registerRoutes(app);
 

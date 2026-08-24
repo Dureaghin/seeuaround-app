@@ -5,6 +5,7 @@ import { routeToPath } from "../../src/lib/resolveRoute";
 import { api } from "../../src/lib/api";
 import { useApp } from "../../src/context/AppContext";
 import {
+  ErrText,
   Button,
   Eyebrow,
   HangoutBanner,
@@ -25,20 +26,25 @@ export default function SundayScreen() {
   const { me } = useApp();
   const [nights, setNights] = useState<Night[]>([]);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     api.getWeek().then((r) => setNights(r.nights)).catch(() => {});
   }, []);
 
   function toggle(i: number) {
+    setError("");
     setNights((prev) => prev.map((n, idx) => (idx === i ? { ...n, free: !n.free } : n)));
   }
 
   async function save() {
     setSaving(true);
+    setError("");
     try {
       const state = await api.setWeek(nights.map(({ date, free }) => ({ date, free })));
       router.replace(routeToPath(state) as never);
+    } catch {
+      setError("Could not save your week. Check your connection and try again.");
     } finally {
       setSaving(false);
     }
@@ -64,6 +70,7 @@ export default function SundayScreen() {
       <WeekTally count={litCount} />
 
       <Spacer />
+      {error ? <ErrText>{error}</ErrText> : null}
       <Button label={saving ? "Sending…" : "Send it"} onPress={save} loading={saving} />
       <Text style={uiStyles.quiethours}>
         Answer whenever. Nobody gets pinged before 8am their time.
