@@ -15,8 +15,12 @@ async function request<T>(
   options: RequestInit = {},
   auth = true,
 ): Promise<T> {
+  const method = (options.method ?? "GET").toUpperCase();
+  const sendsJson = ["POST", "PUT", "PATCH"].includes(method);
+  const body = options.body ?? (sendsJson ? "{}" : undefined);
+
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(sendsJson ? { "Content-Type": "application/json" } : {}),
     ...(options.headers as Record<string, string>),
   };
 
@@ -25,7 +29,7 @@ async function request<T>(
     if (token) headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const res = await fetch(`${API_URL}${path}`, { ...options, method, body, headers });
   if (!res.ok) {
     const body = await res.text();
     throw new ApiError(res.status, body || res.statusText);

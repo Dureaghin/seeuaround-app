@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View, Platform } from "react-native";
 import Svg, { Defs, LinearGradient as SvgGradient, Rect, Stop } from "react-native-svg";
 import { colors, fonts } from "../lib/theme";
 
@@ -52,8 +52,12 @@ const styles = StyleSheet.create({
   markCompact: { fontSize: 22 },
   litU: {
     color: colors.lamp,
-    textShadowColor: "rgba(243,194,103,0.5)",
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 14,
+    ...(Platform.OS === "web"
+      ? { textShadow: "0 0 14px rgba(243,194,103,0.5)" }
+      : {
+          textShadowColor: "rgba(243,194,103,0.5)",
+          textShadowOffset: { width: 0, height: 0 },
+          textShadowRadius: 14,
+        }),
   },
 });

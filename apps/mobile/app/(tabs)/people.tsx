@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Text } from "react-native";
-import * as Clipboard from "expo-clipboard";
-import { api } from "../src/lib/api";
-import { useApp } from "../src/context/AppContext";
+import { api } from "../../src/lib/api";
+import { useCopyFeedback } from "../../src/lib/copy-feedback";
+import { useApp } from "../../src/context/AppContext";
 import {
   CodeCard,
   Eyebrow,
@@ -13,14 +13,14 @@ import {
   Spacer,
   Sub,
   uiStyles,
-} from "../src/components/ui";
+} from "../../src/components/ui";
 
 export default function PeopleScreen() {
   const { me, refresh } = useApp();
   const [connections, setConnections] = useState<
     Awaited<ReturnType<typeof api.getConnections>>["connections"]
   >([]);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyFeedback("Code copied");
 
   useEffect(() => {
     api.getConnections().then((r) => setConnections(r.connections)).catch(() => {});
@@ -33,9 +33,7 @@ export default function PeopleScreen() {
   async function copyCode() {
     const code = me?.user?.shortCode;
     if (!code) return;
-    await Clipboard.setStringAsync(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    await copy(code);
   }
 
   return (
@@ -55,7 +53,7 @@ export default function PeopleScreen() {
       ) : null}
 
       <Eyebrow>Your code</Eyebrow>
-      <CodeCard copyLabel={copied ? "Copied" : "Copy"} onCopy={copyCode}>
+      <CodeCard copied={copied} onCopy={copyCode}>
         <Text style={uiStyles.codeMono}>{me?.user?.shortCode ?? "…"}</Text>
       </CodeCard>
 

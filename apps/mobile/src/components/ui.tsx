@@ -10,8 +10,11 @@ import {
   View,
   type TextInput as TextInputType,
 } from "react-native";
+import { useSegments } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BrandLockup } from "./Logo";
+import { TAB_BAR_HEIGHT } from "./AppTabBar";
 import { colors, fonts, radius, spacing } from "../lib/theme";
 
 export function Screen({
@@ -23,10 +26,20 @@ export function Screen({
   showLogo?: boolean;
   bare?: boolean;
 }) {
+  const segments = useSegments();
+  const insets = useSafeAreaInsets();
+  const inTabs = segments[0] === "(tabs)";
+  const paddingBottom = inTabs
+    ? TAB_BAR_HEIGHT + Math.max(insets.bottom, spacing.screenBottom)
+    : spacing.screenBottom;
+
   return (
     <ScrollView
       style={styles.screenScroll}
-      contentContainerStyle={bare ? styles.bareContent : styles.screenContent}
+      contentContainerStyle={[
+        bare ? styles.bareContent : styles.screenContent,
+        { paddingBottom },
+      ]}
       keyboardShouldPersistTaps="handled"
     >
       {showLogo && !bare ? <BrandLockup /> : null}
@@ -285,18 +298,30 @@ export function HangoutBanner({
 export function CodeCard({
   children,
   copyLabel = "Copy",
+  copiedLabel = "Copied",
+  copied = false,
   onCopy,
 }: {
   children: React.ReactNode;
   copyLabel?: string;
+  copiedLabel?: string;
+  copied?: boolean;
   onCopy?: () => void;
 }) {
   return (
     <View style={styles.codeCard}>
       {children}
       {onCopy ? (
-        <Pressable onPress={onCopy} style={styles.copy}>
-          <Text style={styles.copyText}>{copyLabel}</Text>
+        <Pressable
+          onPress={onCopy}
+          style={[styles.copy, copied && styles.copyCopied]}
+          accessibilityRole="button"
+          accessibilityLabel={copied ? copiedLabel : copyLabel}
+          accessibilityState={{ disabled: copied }}
+        >
+          <Text style={[styles.copyText, copied && styles.copyTextCopied]}>
+            {copied ? copiedLabel : copyLabel}
+          </Text>
         </Pressable>
       ) : null}
     </View>
@@ -592,11 +617,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.screenX,
     paddingTop: 36,
-    paddingBottom: spacing.screenBottom,
   },
   bareContent: {
     flexGrow: 1,
-    paddingBottom: spacing.screenBottom,
   },
   spacer: { flex: 1, minHeight: 18 },
   eyebrow: {
@@ -855,12 +878,19 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 13,
   },
+  copyCopied: {
+    borderColor: colors.lamp,
+    backgroundColor: "rgba(243,194,103,0.07)",
+  },
   copyText: {
     fontFamily: fonts.mono,
     fontSize: 10.5,
     letterSpacing: 1.05,
     textTransform: "uppercase",
     color: colors.chalk,
+  },
+  copyTextCopied: {
+    color: colors.lamp,
   },
   linkctlR: {
     flexDirection: "row",
@@ -902,10 +932,15 @@ const styles = StyleSheet.create({
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.pane },
   dotFree: {
     backgroundColor: colors.lamp,
-    shadowColor: colors.lamp,
-    shadowOpacity: 0.75,
-    shadowRadius: 5.5,
-    shadowOffset: { width: 0, height: 0 },
+    ...Platform.select({
+      web: { boxShadow: "0 0 5.5px rgba(243,194,103,0.75)" },
+      default: {
+        shadowColor: colors.lamp,
+        shadowOpacity: 0.75,
+        shadowRadius: 5.5,
+        shadowOffset: { width: 0, height: 0 },
+      },
+    }),
   },
   personName: { flex: 1, fontFamily: fonts.body, fontSize: 14.5 },
   personNameFree: { color: colors.chalk },
@@ -944,10 +979,15 @@ const styles = StyleSheet.create({
     justifyContent: "space-evenly",
     paddingVertical: 9,
     paddingHorizontal: 5,
-    shadowColor: colors.lamp,
-    shadowOpacity: 0.3,
-    shadowRadius: 11,
-    shadowOffset: { width: 0, height: 0 },
+    ...Platform.select({
+      web: { boxShadow: "0 0 11px rgba(243,194,103,0.3)" },
+      default: {
+        shadowColor: colors.lamp,
+        shadowOpacity: 0.3,
+        shadowRadius: 11,
+        shadowOffset: { width: 0, height: 0 },
+      },
+    }),
   },
   sash: { height: 1, backgroundColor: "rgba(232,230,225,0.06)" },
   sashLit: { height: 1, backgroundColor: "rgba(58,38,4,0.22)" },

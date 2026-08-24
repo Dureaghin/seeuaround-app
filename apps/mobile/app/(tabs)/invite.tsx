@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, Share, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { api } from "../src/lib/api";
-import { useApp } from "../src/context/AppContext";
+import { api } from "../../src/lib/api";
+import { useCopyFeedback } from "../../src/lib/copy-feedback";
+import { useApp } from "../../src/context/AppContext";
 import {
   Actions,
   Button,
@@ -16,14 +17,13 @@ import {
   Spacer,
   Sub,
   uiStyles,
-} from "../src/components/ui";
-import * as Clipboard from "expo-clipboard";
+} from "../../src/components/ui";
 
 export default function InviteScreen() {
   const router = useRouter();
   const { me, refresh } = useApp();
   const [inviteUrl, setInviteUrl] = useState("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyFeedback("Link copied");
 
   useEffect(() => {
     api.createInvite().then((r) => setInviteUrl(r.url)).catch(() => {});
@@ -33,10 +33,7 @@ export default function InviteScreen() {
   const count = me?.connectionCount ?? 0;
 
   async function copyLink() {
-    if (!inviteUrl) return;
-    await Clipboard.setStringAsync(inviteUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    await copy(inviteUrl);
   }
 
   async function share() {
@@ -59,7 +56,7 @@ export default function InviteScreen() {
         See U Around does nothing until your people are here. Five is enough for a week to line up.
       </Sub>
 
-      <CodeCard copyLabel={copied ? "Copied" : "Copy link"} onCopy={copyLink}>
+      <CodeCard copied={copied} copyLabel="Copy link" onCopy={copyLink}>
         <Text>
           <Text style={uiStyles.codelinkH}>seeuaround.com/j/</Text>
           <Text style={uiStyles.codelinkT}>{token || "…"}</Text>

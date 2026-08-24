@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Text } from "react-native";
 import { useRouter } from "expo-router";
-import { routeToPath } from "../src/lib/resolveRoute";
-import { api } from "../src/lib/api";
-import { useApp } from "../src/context/AppContext";
+import { routeToPath } from "../../src/lib/resolveRoute";
+import { api } from "../../src/lib/api";
+import { useApp } from "../../src/context/AppContext";
 import {
   Button,
   Eyebrow,
@@ -16,13 +16,13 @@ import {
   Sub,
   WeekTally,
   uiStyles,
-} from "../src/components/ui";
+} from "../../src/components/ui";
 
 type Night = { date: string; label: string; free: boolean };
 
 export default function SundayScreen() {
   const router = useRouter();
-  const { me, refresh } = useApp();
+  const { me } = useApp();
   const [nights, setNights] = useState<Night[]>([]);
   const [saving, setSaving] = useState(false);
 

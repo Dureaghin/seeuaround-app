@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, Platform, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useApp } from "../src/context/AppContext";
 import { getToken } from "../src/lib/auth-store";
@@ -13,6 +13,7 @@ export default function Index() {
   const { me, loading, refresh } = useApp();
 
   useEffect(() => {
+    if (Platform.OS === "web") return;
     const cleanup = setupPushListeners((path) => router.replace(path as never));
     return cleanup;
   }, [router]);
@@ -25,15 +26,17 @@ export default function Index() {
         return;
       }
 
-      const last = await Notifications.getLastNotificationResponseAsync();
-      if (last) {
-        const path = pathFromNotification(
-          last.notification.request.content.data as Record<string, unknown>,
-        );
-        if (path) {
-          router.replace(path as never);
-          await registerForPush();
-          return;
+      if (Platform.OS !== "web") {
+        const last = await Notifications.getLastNotificationResponseAsync();
+        if (last) {
+          const path = pathFromNotification(
+            last.notification.request.content.data as Record<string, unknown>,
+          );
+          if (path) {
+            router.replace(path as never);
+            await registerForPush();
+            return;
+          }
         }
       }
 
@@ -43,7 +46,9 @@ export default function Index() {
         return;
       }
 
-      await registerForPush();
+      if (Platform.OS !== "web") {
+        await registerForPush();
+      }
       router.replace(routeToPath(state) as never);
     })();
   }, [loading, me, refresh, router]);
