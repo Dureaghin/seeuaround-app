@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -271,23 +272,58 @@ export function Choice({
   );
 }
 
+export function Mutual({
+  title,
+  items,
+}: {
+  title: string;
+  items: { ok: boolean; text: string }[];
+}) {
+  return (
+    <View style={styles.mutual}>
+      <Text style={styles.mutualH}>{title}</Text>
+      {items.map((item, i) => (
+        <View key={i} style={styles.mutualRow}>
+          <Text style={[styles.mutualIcon, !item.ok && styles.mutualIconNo]}>
+            {item.ok ? "✓" : "✕"}
+          </Text>
+          <Text style={styles.mutualText}>{item.text}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export function HangoutBanner({
   label,
   onYes,
   onNo,
 }: {
   label: string;
-  onYes: () => void;
-  onNo: () => void;
+  onYes: () => void | Promise<void>;
+  onNo: () => void | Promise<void>;
 }) {
+  const [done, setDone] = useState(false);
+
+  if (done) {
+    return (
+      <Text style={styles.askbarDone}>Thanks — that's the only number we care about.</Text>
+    );
+  }
+
+  async function answer(fn: () => void | Promise<void>) {
+    await fn();
+    setDone(true);
+  }
+
   return (
     <View style={styles.askbar}>
       <Text style={styles.askbarQ}>{label}</Text>
       <View style={styles.askbarB}>
-        <Pressable onPress={onYes} style={styles.askbarY}>
+        <Pressable onPress={() => answer(onYes)} style={styles.askbarY}>
           <Text style={styles.askbarYText}>Yes</Text>
         </Pressable>
-        <Pressable onPress={onNo} style={styles.askbarN}>
+        <Pressable onPress={() => answer(onNo)} style={styles.askbarN}>
           <Text style={styles.askbarNText}>Nope</Text>
         </Pressable>
       </View>
@@ -360,11 +396,13 @@ export function PersonRow({
   name,
   free,
   nudge,
+  nudged,
   onNudge,
 }: {
   name: string;
   free?: boolean;
   nudge?: boolean;
+  nudged?: boolean;
   onNudge?: () => void;
 }) {
   return (
@@ -374,8 +412,14 @@ export function PersonRow({
         {name}
       </Text>
       {nudge ? (
-        <Pressable onPress={onNudge} style={styles.nudge}>
-          <Text style={styles.nudgeText}>Nudge</Text>
+        <Pressable
+          onPress={onNudge}
+          disabled={nudged}
+          style={[styles.nudge, nudged && styles.nudgeDone]}
+        >
+          <Text style={[styles.nudgeText, nudged && styles.nudgeTextDone]}>
+            {nudged ? "Nudged" : "Nudge"}
+          </Text>
         </Pressable>
       ) : null}
     </View>
@@ -417,23 +461,17 @@ export function NightStrip({
 }
 
 export function WeekTally({ count }: { count: number }) {
-  const text =
-    count === 0
-      ? "No nights selected yet."
-      : count === 1
-        ? "One night lit."
-        : `${count} nights lit.`;
+  if (count === 0) {
+    return (
+      <Text style={styles.tally}>
+        <Text style={styles.tallyBold}>Nobody</Text> can find you this week.
+      </Text>
+    );
+  }
+  const nightsLabel = count === 1 ? "One night" : `${count} nights`;
   return (
     <Text style={styles.tally}>
-      {text.split(/(\d+|One)/).map((part, i) =>
-        /^\d+$|^One$/.test(part) ? (
-          <Text key={i} style={styles.tallyBold}>
-            {part}
-          </Text>
-        ) : (
-          part
-        ),
-      )}
+      <Text style={styles.tallyBold}>{nightsLabel}</Text> lit · clears Monday morning
     </Text>
   );
 }
@@ -504,16 +542,142 @@ export function ThreadHeader({
   );
 }
 
-export function PlanBar({ plan }: { plan: string }) {
+export function PlanBar({
+  plan,
+  onWherePress,
+  directionsUrl,
+}: {
+  plan: string;
+  onWherePress?: () => void;
+  directionsUrl?: string;
+}) {
   return (
     <View style={styles.plan}>
       <View style={styles.planBody}>
         <Text style={styles.planH}>The plan</Text>
         <Text style={styles.planV}>{plan}</Text>
       </View>
-      <Pressable style={styles.planEdit}>
+      {directionsUrl ? (
+        <Pressable
+          accessibilityLabel="Directions"
+          style={styles.planDir}
+          onPress={() => {
+            Linking.openURL(directionsUrl).catch(() => {});
+          }}
+        >
+          <Text style={styles.planDirIcon}>◎</Text>
+        </Pressable>
+      ) : null}
+      <Pressable style={styles.planEdit} onPress={onWherePress}>
         <Text style={styles.planEditText}>Where?</Text>
       </Pressable>
+    </View>
+  );
+}
+
+type PlaceVote = { name: string; votes: number; mine: boolean };
+
+export function PlacePicker({
+  area = "Saratoga Springs",
+  onPin,
+}: {
+  area?: string;
+  onPin: (placeName: string) => void;
+}) {
+  const [places, setPlaces] = useState<PlaceVote[]>([
+    { name: "The Anchor", votes: 2, mine: false },
+    { name: "Bar Nostra", votes: 1, mine: false },
+    { name: "Wherever's open", votes: 0, mine: false },
+  ]);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<{ name: string; subtitle: string }[]>([]);
+
+  function togglePlace(index: number) {
+    setPlaces((prev) => {
+      const next = prev.map((p, i) => {
+        if (i !== index) return { ...p, mine: false };
+        if (p.mine) return { ...p, mine: false, votes: Math.max(0, p.votes - 1) };
+        return { ...p, mine: true, votes: p.votes + 1 };
+      });
+      const top = [...next].sort((a, b) => b.votes - a.votes)[0];
+      if (top && top.votes > 0 && top.name.toLowerCase() !== "wherever's open") {
+        onPin(top.name);
+      }
+      return next;
+    });
+  }
+
+  function search() {
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      setResults([]);
+      return;
+    }
+    setResults([
+      { name: "The Anchor", subtitle: "Pub · downtown" },
+      { name: "Anchor Brewing Hall", subtitle: "Bar · 0.4 mi" },
+    ].filter((r) => r.name.toLowerCase().includes(q)));
+  }
+
+  function addResult(name: string) {
+    setPlaces((prev) => {
+      if (prev.some((p) => p.name === name)) return prev;
+      return [...prev, { name, votes: 1, mine: true }];
+    });
+    onPin(name);
+    setQuery("");
+    setResults([]);
+  }
+
+  return (
+    <View style={styles.pick}>
+      <Text style={styles.pickH}>Where are we going?</Text>
+      <View style={styles.pickList}>
+        {places.map((place, i) => (
+          <Pressable
+            key={place.name}
+            onPress={() => togglePlace(i)}
+            style={[styles.pickOpt, place.mine && styles.pickOptOn]}
+          >
+            <Text style={styles.pickName}>{place.name}</Text>
+            <Text style={[styles.pickN, place.mine && styles.pickNOn]}>{place.votes} in</Text>
+          </Pressable>
+        ))}
+      </View>
+      <View style={styles.pickAdd}>
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search a bar or restaurant"
+          placeholderTextColor={colors.dim}
+          style={styles.pickField}
+          onSubmitEditing={search}
+        />
+        <Pressable onPress={search} style={styles.pickGo}>
+          <Text style={styles.pickGoText}>→</Text>
+        </Pressable>
+      </View>
+      <View style={styles.pickArea}>
+        <Text style={styles.pickAreaText}>Searching </Text>
+        <Text style={styles.pickAreaBtn}>{area}</Text>
+        <Text style={styles.pickAreaNote}> · set once, per group</Text>
+      </View>
+      {results.length > 0 ? (
+        <View style={styles.pickRes}>
+          <Text style={styles.pickResH}>Results</Text>
+          {results.map((r) => (
+            <Pressable key={r.name} onPress={() => addResult(r.name)} style={styles.pickR}>
+              <View style={styles.pickRb}>
+                <Text style={styles.pickRn}>{r.name}</Text>
+                <Text style={styles.pickRs}>{r.subtitle}</Text>
+              </View>
+              <Text style={styles.pickRadd}>+</Text>
+            </Pressable>
+          ))}
+          <Text style={styles.pickAttr}>Places data · Google</Text>
+        </View>
+      ) : null}
+      <Text style={styles.pickF}>Tap one to say you're up for it. Most taps gets pinned.</Text>
     </View>
   );
 }
@@ -522,13 +686,15 @@ export function MessageBubble({
   body,
   from,
   mine,
+  grouped,
 }: {
   body: string;
   from?: string;
   mine?: boolean;
+  grouped?: boolean;
 }) {
   return (
-    <View style={[styles.msg, mine ? styles.msgMe : styles.msgThem]}>
+    <View style={[styles.msg, mine ? styles.msgMe : styles.msgThem, grouped && styles.msgGrouped]}>
       {from && !mine ? <Text style={styles.msgFrom}>{from}</Text> : null}
       <Text style={[styles.msgBody, mine && styles.msgBodyMe]}>{body}</Text>
     </View>
@@ -861,6 +1027,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
   },
   askbarNText: { fontFamily: fonts.bodySemi, fontSize: 12.5, color: colors.dim },
+  askbarDone: {
+    fontFamily: fonts.mono,
+    fontSize: 12.5,
+    color: colors.lamp,
+    marginBottom: 16,
+  },
+  mutual: {
+    backgroundColor: colors.fineprintBg,
+    borderRadius: 13,
+    padding: 15,
+    marginTop: 22,
+  },
+  mutualH: {
+    fontFamily: fonts.mono,
+    fontSize: 9.5,
+    letterSpacing: 1.33,
+    textTransform: "uppercase",
+    color: colors.dim,
+    marginBottom: 9,
+  },
+  mutualRow: { flexDirection: "row", gap: 8, marginTop: 6 },
+  mutualIcon: { color: colors.lamp, fontSize: 12.5 },
+  mutualIconNo: { color: colors.muted },
+  mutualText: {
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 12.5,
+    lineHeight: 19,
+    color: colors.dim,
+  },
   codeCard: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -959,6 +1155,8 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     color: colors.dim,
   },
+  nudgeDone: { borderColor: colors.line, opacity: 0.55 },
+  nudgeTextDone: { color: colors.muted },
   strip: { flexDirection: "row", gap: 8, marginTop: 28, height: 244 },
   night: { flex: 1, gap: 7, flexDirection: "column" },
   pane: {
@@ -1083,6 +1281,119 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     color: colors.lamp,
   },
+  planDir: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: "rgba(243,194,103,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  planDirIcon: { color: colors.lamp, fontSize: 14 },
+  pick: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 15,
+    padding: 15,
+    marginTop: 10,
+  },
+  pickH: {
+    fontFamily: fonts.mono,
+    fontSize: 9.5,
+    letterSpacing: 1.33,
+    textTransform: "uppercase",
+    color: colors.dim,
+    marginBottom: 11,
+  },
+  pickList: { gap: 7 },
+  pickOpt: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: "transparent",
+    borderRadius: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 13,
+  },
+  pickOptOn: {
+    borderColor: "rgba(243,194,103,0.5)",
+    backgroundColor: "rgba(243,194,103,0.08)",
+  },
+  pickName: { flex: 1, fontFamily: fonts.body, fontSize: 14, color: colors.chalk },
+  pickN: { fontFamily: fonts.mono, fontSize: 11, color: colors.dim },
+  pickNOn: { color: colors.lamp },
+  pickAdd: { flexDirection: "row", gap: 8, marginTop: 10 },
+  pickField: {
+    flex: 1,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 11,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontFamily: fonts.body,
+    fontSize: 14,
+    color: colors.chalk,
+  },
+  pickGo: {
+    width: 40,
+    borderRadius: 11,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pickGoText: { color: colors.lamp, fontSize: 18 },
+  pickArea: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", marginTop: 12 },
+  pickAreaText: { fontFamily: fonts.body, fontSize: 12.5, color: colors.dim },
+  pickAreaBtn: {
+    fontFamily: fonts.body,
+    fontSize: 12.5,
+    color: colors.lamp,
+    textDecorationLine: "underline",
+    textDecorationStyle: "dashed",
+  },
+  pickAreaNote: { fontFamily: fonts.body, fontSize: 12.5, color: "#4A4E56" },
+  pickRes: { marginTop: 12, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 12 },
+  pickResH: {
+    fontFamily: fonts.mono,
+    fontSize: 9.5,
+    letterSpacing: 1.33,
+    textTransform: "uppercase",
+    color: colors.dim,
+    marginBottom: 9,
+  },
+  pickR: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+  },
+  pickRb: { flex: 1 },
+  pickRn: { fontFamily: fonts.body, fontSize: 13.5, color: colors.chalk },
+  pickRs: { fontFamily: fonts.body, fontSize: 11.5, color: colors.dim, marginTop: 2 },
+  pickRadd: { fontFamily: fonts.mono, fontSize: 15, color: colors.lamp },
+  pickAttr: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    color: "#4A4E56",
+    marginTop: 10,
+    letterSpacing: 0.54,
+  },
+  pickF: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    color: colors.muted,
+    marginTop: 11,
+    lineHeight: 16,
+  },
   msg: {
     maxWidth: "80%",
     paddingVertical: 10,
@@ -1099,6 +1410,11 @@ const styles = StyleSheet.create({
     alignSelf: "flex-end",
     backgroundColor: colors.lamp,
     borderBottomRightRadius: 6,
+  },
+  msgGrouped: {
+    borderBottomLeftRadius: 17,
+    borderBottomRightRadius: 17,
+    marginTop: -1,
   },
   msgFrom: { fontFamily: fonts.body, fontSize: 11, color: colors.dim, marginBottom: 4 },
   msgBody: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.chalk },

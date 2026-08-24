@@ -87,7 +87,7 @@ export default function CodeScreen() {
   const resendLabel =
     resendSec > 0
       ? `Resend in 0:${String(resendSec).padStart(2, "0")}`
-      : "Resend code";
+      : "Didn't arrive? Send another";
 
   return (
     <Screen>

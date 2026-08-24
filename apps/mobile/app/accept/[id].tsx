@@ -8,8 +8,8 @@ import {
   Actions,
   Button,
   Eyebrow,
-  Fineprint,
   Headline,
+  Mutual,
   Screen,
   SmallPrint,
   Spacer,
@@ -70,7 +70,7 @@ export default function AcceptScreen() {
         Connections go both ways. Until you accept, neither of you can see the other's week.
       </Sub>
 
-      <Fineprint
+      <Mutual
         title="If you accept"
         items={[
           {

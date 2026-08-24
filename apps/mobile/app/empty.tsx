@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import { api } from "../src/lib/api";
-import { getToken } from "../src/lib/auth-store";
 import {
   Button,
   Eyebrow,
@@ -16,6 +15,7 @@ import {
 export default function EmptyScreen() {
   const router = useRouter();
   const [missing, setMissing] = useState<{ id: string; firstName: string }[]>([]);
+  const [nudged, setNudged] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     api
@@ -44,7 +44,13 @@ export default function EmptyScreen() {
         <>
           <GroupHeader>Hasn't set a week — {missing.length}</GroupHeader>
           {missing.map((p) => (
-            <PersonRow key={p.id} name={p.firstName} nudge onNudge={() => {}} />
+            <PersonRow
+              key={p.id}
+              name={p.firstName}
+              nudge
+              nudged={nudged.has(p.id)}
+              onNudge={() => setNudged((prev) => new Set(prev).add(p.id))}
+            />
           ))}
         </>
       ) : null}

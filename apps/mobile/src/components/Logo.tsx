@@ -25,24 +25,28 @@ export function BrandIcon({ size = 32 }: { size?: number }) {
 
 export function BrandLockup({ compact }: { compact?: boolean }) {
   return (
-    <View style={[styles.lockup, compact && styles.lockupCompact]}>
-      <BrandIcon size={compact ? 28 : 32} />
-      <Text style={[styles.mark, compact && styles.markCompact]}>
-        see<Text style={styles.litU}>u</Text>around
-      </Text>
+    <View style={[styles.wrap, compact && styles.wrapCompact]}>
+      <View style={[styles.lockup, compact && styles.lockupCompact]}>
+        <BrandIcon size={compact ? 28 : 32} />
+        <Text style={[styles.mark, compact && styles.markCompact]}>
+          see<Text style={styles.litU}>u</Text>around
+        </Text>
+      </View>
+      <Text style={[styles.tag, compact && styles.tagCompact]}>See you around.</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrap: { alignItems: "center", marginBottom: 28 },
+  wrapCompact: { marginBottom: 20 },
   lockup: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 11,
-    marginBottom: 28,
   },
-  lockupCompact: { marginBottom: 20 },
+  lockupCompact: {},
   mark: {
     fontFamily: fonts.display,
     fontSize: 26,
@@ -50,6 +54,14 @@ const styles = StyleSheet.create({
     color: colors.chalk,
   },
   markCompact: { fontSize: 22 },
+  tag: {
+    fontFamily: fonts.body,
+    fontSize: 13.5,
+    color: colors.dim,
+    marginTop: 5,
+    textAlign: "center",
+  },
+  tagCompact: { fontSize: 12.5 },
   litU: {
     color: colors.lamp,
     ...(Platform.OS === "web"

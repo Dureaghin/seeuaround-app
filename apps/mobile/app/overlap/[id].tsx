@@ -7,7 +7,6 @@ import {
   Actions,
   Button,
   Eyebrow,
-  HangoutBanner,
   Headline,
   OverlapGrid,
   Screen,
@@ -18,6 +17,14 @@ import {
 import { Text } from "react-native";
 
 const AXIS = ["M", "T", "W", "T", "F", "S", "S"];
+
+function memberFreeIndices(memberId: string, sharedIndex: number): number[] {
+  let hash = 0;
+  for (const ch of memberId) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
+  const offsets = [0, 2, -1, 3];
+  const extra = (sharedIndex + offsets[Math.abs(hash) % offsets.length] + 7) % 7;
+  return [...new Set([sharedIndex, extra])].sort((a, b) => a - b);
+}
 
 export default function OverlapScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -45,7 +52,7 @@ export default function OverlapScreen() {
       const isYou = m.id === me?.user?.id;
       const freeIndices = isYou
         ? myWeek.map((n, i) => (n.free ? i : -1)).filter((i) => i >= 0)
-        : [sharedIndex];
+        : memberFreeIndices(m.id, sharedIndex);
       return {
         label: isYou ? "You" : m.firstName,
         isYou,
@@ -71,13 +78,6 @@ export default function OverlapScreen() {
 
   return (
     <Screen>
-      {me?.pendingHangoutCheck ? (
-        <HangoutBanner
-          label={me.pendingHangoutCheck.label}
-          onYes={() => api.hangoutCheck(me.pendingHangoutCheck!.overlapId, true)}
-          onNo={() => api.hangoutCheck(me.pendingHangoutCheck!.overlapId, false)}
-        />
-      ) : null}
       <Eyebrow lamp>Overlap</Eyebrow>
       <Headline>{headline}</Headline>
       <Sub>

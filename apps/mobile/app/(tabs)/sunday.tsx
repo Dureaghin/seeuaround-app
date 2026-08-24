@@ -8,7 +8,6 @@ import {
   ErrText,
   Button,
   Eyebrow,
-  HangoutBanner,
   Headline,
   NightStrip,
   QuietLink,
@@ -55,13 +54,6 @@ export default function SundayScreen() {
 
   return (
     <Screen>
-      {me?.pendingHangoutCheck ? (
-        <HangoutBanner
-          label={me.pendingHangoutCheck.label}
-          onYes={() => api.hangoutCheck(me.pendingHangoutCheck!.overlapId, true)}
-          onNo={() => api.hangoutCheck(me.pendingHangoutCheck!.overlapId, false)}
-        />
-      ) : null}
       <Eyebrow>{eyebrow}</Eyebrow>
       <Headline>Which nights are you free?</Headline>
       <Sub>Tap the nights you're up for. Clears Monday morning.</Sub>

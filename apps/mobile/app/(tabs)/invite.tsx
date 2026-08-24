@@ -9,7 +9,6 @@ import {
   Button,
   CodeCard,
   Eyebrow,
-  HangoutBanner,
   Headline,
   LinkRow,
   Pips,
@@ -43,13 +42,6 @@ export default function InviteScreen() {
 
   return (
     <Screen>
-      {me?.pendingHangoutCheck ? (
-        <HangoutBanner
-          label={me.pendingHangoutCheck.label}
-          onYes={() => api.hangoutCheck(me.pendingHangoutCheck!.overlapId, true)}
-          onNo={() => api.hangoutCheck(me.pendingHangoutCheck!.overlapId, false)}
-        />
-      ) : null}
       <Eyebrow>Getting started</Eyebrow>
       <Headline>Add five people.</Headline>
       <Sub>

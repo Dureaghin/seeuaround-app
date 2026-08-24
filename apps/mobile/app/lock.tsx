@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { BrandIcon } from "../src/components/Logo";
+import { useApp } from "../src/context/AppContext";
 import { Button, Screen, Spacer } from "../src/components/ui";
 import { colors, fonts } from "../src/lib/theme";
 
@@ -30,6 +31,7 @@ function PushCard({
 
 export default function LockScreen() {
   const router = useRouter();
+  const { me } = useApp();
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -48,6 +50,16 @@ export default function LockScreen() {
     month: "long",
   });
 
+  function openTop() {
+    if (me?.unansweredOverlapId) {
+      router.push(`/overlap/${me.unansweredOverlapId}`);
+    } else if (me?.activeThreadId) {
+      router.push(`/thread/${me.activeThreadId}`);
+    } else {
+      router.push("/people");
+    }
+  }
+
   return (
     <Screen bare showLogo={false}>
       <Text style={styles.lockTime}>{timeStr}</Text>
@@ -60,7 +72,7 @@ export default function LockScreen() {
 
       <Spacer />
       <View style={styles.ctaWrap}>
-        <Button label="Open the top one" onPress={() => router.push("/people")} />
+        <Button label="Open the top one" onPress={openTop} />
       </View>
     </Screen>
   );
