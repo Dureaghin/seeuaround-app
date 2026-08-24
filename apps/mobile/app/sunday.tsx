@@ -1,11 +1,22 @@
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Text } from "react-native";
 import { useRouter } from "expo-router";
 import { routeToPath } from "../src/lib/resolveRoute";
 import { api } from "../src/lib/api";
 import { useApp } from "../src/context/AppContext";
-import { HangoutBanner, Screen, Subtitle, Title } from "../src/components/ui";
-import { colors, spacing } from "../src/lib/theme";
+import {
+  Button,
+  Eyebrow,
+  HangoutBanner,
+  Headline,
+  NightStrip,
+  QuietLink,
+  Screen,
+  Spacer,
+  Sub,
+  WeekTally,
+  uiStyles,
+} from "../src/components/ui";
 
 type Night = { date: string; label: string; free: boolean };
 
@@ -20,9 +31,7 @@ export default function SundayScreen() {
   }, []);
 
   function toggle(i: number) {
-    setNights((prev) =>
-      prev.map((n, idx) => (idx === i ? { ...n, free: !n.free } : n)),
-    );
+    setNights((prev) => prev.map((n, idx) => (idx === i ? { ...n, free: !n.free } : n)));
   }
 
   async function save() {
@@ -35,6 +44,9 @@ export default function SundayScreen() {
     }
   }
 
+  const litCount = nights.filter((n) => n.free).length;
+  const eyebrow = me?.weekSet ? "Sunday" : "Sunday · 6:04 PM";
+
   return (
     <Screen>
       {me?.pendingHangoutCheck ? (
@@ -44,51 +56,19 @@ export default function SundayScreen() {
           onNo={() => api.hangoutCheck(me.pendingHangoutCheck!.overlapId, false)}
         />
       ) : null}
-      <Title>This week</Title>
-      <Subtitle>Tap the nights you're up for going out.</Subtitle>
-      <View style={styles.strip}>
-        {nights.map((night, i) => (
-          <Pressable key={night.date} onPress={() => toggle(i)} style={styles.col}>
-            <View style={[styles.bar, night.free && styles.barLit]} />
-            <Text style={[styles.label, night.free && styles.labelLit]}>{night.label}</Text>
-          </Pressable>
-        ))}
-      </View>
-      <Pressable onPress={save} style={[styles.save, saving && { opacity: 0.7 }]}>
-        <Text style={styles.saveText}>{saving ? "Saving…" : "Done"}</Text>
-      </Pressable>
+      <Eyebrow>{eyebrow}</Eyebrow>
+      <Headline>Which nights are you free?</Headline>
+      <Sub>Tap the nights you're up for. Clears Monday morning.</Sub>
+
+      <NightStrip nights={nights} onToggle={toggle} />
+      <WeekTally count={litCount} />
+
+      <Spacer />
+      <Button label={saving ? "Sending…" : "Send it"} onPress={save} loading={saving} />
+      <Text style={uiStyles.quiethours}>
+        Answer whenever. Nobody gets pinged before 8am their time.
+      </Text>
+      <QuietLink label="Sit this week out" onPress={() => router.push("/pause")} />
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  strip: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: spacing.lg,
-    marginBottom: spacing.xl,
-  },
-  col: { alignItems: "center", flex: 1 },
-  bar: {
-    width: 28,
-    height: 120,
-    borderRadius: 14,
-    backgroundColor: colors.surface2,
-    marginBottom: spacing.sm,
-  },
-  barLit: {
-    backgroundColor: colors.lamp,
-    shadowColor: colors.lamp,
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-  },
-  label: { color: colors.dim, fontSize: 12, fontWeight: "500" },
-  labelLit: { color: colors.lampHot },
-  save: {
-    backgroundColor: colors.lamp,
-    borderRadius: 999,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  saveText: { color: colors.night, fontWeight: "600", fontSize: 16 },
-});

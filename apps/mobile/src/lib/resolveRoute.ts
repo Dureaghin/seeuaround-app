@@ -6,6 +6,8 @@ export function routeToPath(state: MeState): string {
       return "/(auth)/email";
     case "age":
       return "/age";
+    case "accept":
+      return `/accept/${state.routeParams?.id ?? state.pendingConnectionId}`;
     case "invite":
       return "/invite";
     case "overlap":
@@ -16,6 +18,8 @@ export function routeToPath(state: MeState): string {
       return "/sunday";
     case "pause":
       return "/pause";
+    case "empty":
+      return "/empty";
     case "people":
     default:
       return "/people";
@@ -26,6 +30,7 @@ export function pathFromNotification(data: Record<string, unknown>): string | nu
   if (data.overlapId) return `/overlap/${data.overlapId}`;
   if (data.threadId) return `/thread/${data.threadId}`;
   if (data.route === "sunday") return "/sunday";
+  if (data.route === "lock") return "/lock";
   if (data.route === "overlap" && data.overlapId) return `/overlap/${data.overlapId}`;
   return null;
 }

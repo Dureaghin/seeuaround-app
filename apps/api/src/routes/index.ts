@@ -199,24 +199,39 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get("/connections", { preHandler: authHook }, async (request) => {
     const userId = request.user!.id;
+    const weekStart = new Date();
+    const day = weekStart.getDay();
+    const diff = day === 0 ? 0 : 7 - day;
+    weekStart.setDate(weekStart.getDate() + diff);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
+
     const { rows } = await query<{
       id: string;
       handle: string;
       first_name: string;
       status: string;
       free_tonight: boolean;
+      week_set: boolean;
     }>(
-      `SELECT u.id, u.handle, u.first_name, c.status,
+      `SELECT c.id, u.handle, u.first_name, c.status,
          EXISTS (
            SELECT 1 FROM windows w
            WHERE w.user_id = u.id
              AND w.span && tstzrange(date_trunc('day', now()), date_trunc('day', now()) + interval '1 day')
-         ) AS free_tonight
+         ) AS free_tonight,
+         EXISTS (
+           SELECT 1 FROM windows w
+           WHERE w.user_id = u.id
+             AND w.span && tstzrange($2, $3)
+         ) AS week_set
        FROM connections c
        JOIN users u ON u.id = CASE WHEN c.user_a = $1 THEN c.user_b ELSE c.user_a END
        WHERE c.user_a = $1 OR c.user_b = $1
        ORDER BY u.handle`,
-      [userId],
+      [userId, weekStart.toISOString(), weekEnd.toISOString()],
     );
 
     return {
@@ -226,8 +241,26 @@ export async function registerRoutes(app: FastifyInstance) {
         firstName: r.first_name,
         status: r.status,
         freeTonight: r.free_tonight,
+        weekSet: r.week_set,
       })),
       shortCode: request.user!.shortCode,
+    };
+  });
+
+  app.get("/connections/:id", { preHandler: authHook }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { rows } = await query<{ first_name: string; handle: string; status: string }>(
+      `SELECT u.first_name, u.handle, c.status
+       FROM connections c
+       JOIN users u ON u.id = CASE WHEN c.user_a = $2 THEN c.user_b ELSE c.user_a END
+       WHERE c.id = $1 AND (c.user_a = $2 OR c.user_b = $2)`,
+      [id, request.user!.id],
+    );
+    if (!rows[0]) return reply.code(404).send({ error: "not_found" });
+    return {
+      firstName: rows[0].first_name,
+      handle: rows[0].handle,
+      status: rows[0].status,
     };
   });
 
@@ -266,8 +299,8 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get("/overlaps/:id", { preHandler: authHook }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { rows: overlapRows } = await query<{ night_date: string }>(
-      `SELECT o.night_date::text FROM "overlaps" o
+    const { rows: overlapRows } = await query<{ night_date: string; expires_at: string }>(
+      `SELECT o.night_date::text, o.expires_at::text FROM "overlaps" o
        JOIN overlap_members om ON om.overlap_id = o.id AND om.user_id = $2
        WHERE o.id = $1`,
       [id, request.user!.id],
@@ -289,6 +322,8 @@ export async function registerRoutes(app: FastifyInstance) {
 
     return {
       id,
+      nightDate: overlapRows[0].night_date,
+      expiresAt: overlapRows[0].expires_at,
       dateLabel: new Date(overlapRows[0].night_date).toLocaleDateString("en-US", {
         weekday: "long",
         month: "short",
@@ -440,6 +475,35 @@ export async function registerRoutes(app: FastifyInstance) {
     );
     if (!rows[0]) return reply.code(404).send({ error: "not_found" });
     return { firstName: rows[0].first_name };
+  });
+
+  app.post("/invites/:token/connect", { preHandler: authHook }, async (request, reply) => {
+    const { token } = request.params as { token: string };
+    const tokenHash = hashToken(token);
+    const { rows } = await query<{ user_id: string }>(
+      `SELECT user_id FROM invite_tokens
+       WHERE token_hash = $1 AND revoked_at IS NULL
+         AND expires_at > now() AND uses_remaining > 0`,
+      [tokenHash],
+    );
+    const inviterId = rows[0]?.user_id;
+    if (!inviterId || inviterId === request.user!.id) {
+      return reply.code(404).send({ error: "not_found" });
+    }
+
+    const [userA, userB] = [request.user!.id, inviterId].sort();
+    await query(
+      `INSERT INTO connections (user_a, user_b, status) VALUES ($1, $2, 'pending')
+       ON CONFLICT (user_a, user_b) DO NOTHING`,
+      [userA, userB],
+    );
+    await query(
+      `UPDATE invite_tokens SET uses_remaining = uses_remaining - 1
+       WHERE token_hash = $1 AND uses_remaining > 0`,
+      [tokenHash],
+    );
+
+    return buildMeState(request.user!);
   });
 
   app.post("/hangout-check/:overlapId", { preHandler: authHook }, async (request, reply) => {

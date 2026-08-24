@@ -5,11 +5,13 @@ export const SITE = "https://seeuaround.com";
 export const AppRoute = z.enum([
   "auth",
   "age",
+  "accept",
   "invite",
   "overlap",
   "thread",
   "sunday",
   "pause",
+  "empty",
   "people",
 ]);
 export type AppRoute = z.infer<typeof AppRoute>;
@@ -38,6 +40,7 @@ export const MeStateSchema = z.object({
       label: z.string(),
     })
     .nullable(),
+  pendingConnectionId: z.string().uuid().nullable().optional(),
 });
 export type MeState = z.infer<typeof MeStateSchema>;
 

@@ -1,40 +1,42 @@
-import { useEffect, useState } from "react";
-import { Share, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Pressable, Share, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { routeToPath } from "../src/lib/resolveRoute";
 import { api } from "../src/lib/api";
 import { useApp } from "../src/context/AppContext";
-import { Button, HangoutBanner, Screen, Subtitle, TextField, Title } from "../src/components/ui";
-import { colors, spacing } from "../src/lib/theme";
+import {
+  Actions,
+  Button,
+  CodeCard,
+  Eyebrow,
+  HangoutBanner,
+  Headline,
+  LinkRow,
+  Pips,
+  Screen,
+  Spacer,
+  Sub,
+  uiStyles,
+} from "../src/components/ui";
+import * as Clipboard from "expo-clipboard";
 
 export default function InviteScreen() {
   const router = useRouter();
   const { me, refresh } = useApp();
   const [inviteUrl, setInviteUrl] = useState("");
-  const [code, setCode] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState("");
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     api.createInvite().then((r) => setInviteUrl(r.url)).catch(() => {});
   }, []);
 
-  async function addByCode() {
-    setLoading(true);
-    setMsg("");
-    try {
-      await api.requestConnection(code.trim().toUpperCase());
-      setMsg("Request sent.");
-      setCode("");
-      const state = await refresh();
-      if (state && state.connectionCount >= 5) {
-        router.replace(routeToPath(state) as never);
-      }
-    } catch {
-      setMsg("Code not found.");
-    } finally {
-      setLoading(false);
-    }
+  const token = useMemo(() => inviteUrl.split("/j/")[1] ?? "", [inviteUrl]);
+  const count = me?.connectionCount ?? 0;
+
+  async function copyLink() {
+    if (!inviteUrl) return;
+    await Clipboard.setStringAsync(inviteUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   async function share() {
@@ -51,44 +53,42 @@ export default function InviteScreen() {
           onNo={() => api.hangoutCheck(me.pendingHangoutCheck!.overlapId, false)}
         />
       ) : null}
-      <Title>Build your circle</Title>
-      <Subtitle>
-        You need at least 5 friends for overlap to work. Share your code or link.
-      </Subtitle>
-      <View style={styles.codeBox}>
-        <Text style={styles.code}>{me?.user?.shortCode ?? "…"}</Text>
+      <Eyebrow>Getting started</Eyebrow>
+      <Headline>Add five people.</Headline>
+      <Sub>
+        See U Around does nothing until your people are here. Five is enough for a week to line up.
+      </Sub>
+
+      <CodeCard copyLabel={copied ? "Copied" : "Copy link"} onCopy={copyLink}>
+        <Text>
+          <Text style={uiStyles.codelinkH}>seeuaround.com/j/</Text>
+          <Text style={uiStyles.codelinkT}>{token || "…"}</Text>
+        </Text>
+      </CodeCard>
+
+      <View style={{ marginTop: 16, borderTopWidth: 1, borderTopColor: "rgba(232,230,225,0.10)" }}>
+        <LinkRow label="Expires" value="in 7 days" />
+        <LinkRow label="Uses left" value={`${Math.max(0, 5 - count)} of 5`} />
+        <LinkRow label="Anyone with the link" value="can ask to connect" />
+        <Pressable style={uiStyles.linkctlKill} disabled>
+          <Text style={uiStyles.linkctlKillText}>Turn this link off</Text>
+        </Pressable>
       </View>
-      <Button label="Share invite link" onPress={share} variant="ghost" />
-      <Subtitle>Or add someone by their code:</Subtitle>
-      <TextField
-        value={code}
-        onChangeText={setCode}
-        placeholder="SU-XXXX-XXXX"
-        autoCapitalize="characters"
-      />
-      {msg ? <Text style={styles.msg}>{msg}</Text> : null}
-      <Button label="Add friend" onPress={addByCode} loading={loading} />
-      <Text style={styles.count}>{me?.connectionCount ?? 0} / 5 connections</Text>
+
+      <Pips filled={count} />
+
+      <Spacer />
+      <Actions>
+        <Button label="Share the link" onPress={share} />
+        <Button
+          label="See who's here"
+          onPress={async () => {
+            await refresh();
+            router.push("/people");
+          }}
+          variant="ghost"
+        />
+      </Actions>
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  codeBox: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: spacing.lg,
-    alignItems: "center",
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  code: {
-    color: colors.lamp,
-    fontSize: 22,
-    fontWeight: "700",
-    letterSpacing: 2,
-  },
-  msg: { color: colors.dim, marginBottom: spacing.sm },
-  count: { color: colors.dim, textAlign: "center", marginTop: spacing.lg },
-});

@@ -1,10 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { routeToPath } from "../../src/lib/resolveRoute";
 import { api } from "../../src/lib/api";
 import { setToken } from "../../src/lib/auth-store";
 import { useApp } from "../../src/context/AppContext";
-import { Button, Screen, Subtitle, TextField, Title } from "../../src/components/ui";
+import {
+  Button,
+  Eyebrow,
+  ErrText,
+  Headline,
+  Linkish,
+  OtpInput,
+  Screen,
+  SmallPrint,
+  Spacer,
+  uiStyles,
+} from "../../src/components/ui";
 import { registerForPush } from "../../src/lib/push";
 
 export default function CodeScreen() {
@@ -14,6 +26,13 @@ export default function CodeScreen() {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [resendSec, setResendSec] = useState(42);
+
+  useEffect(() => {
+    if (resendSec <= 0) return;
+    const t = setInterval(() => setResendSec((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [resendSec]);
 
   async function onVerify() {
     setLoading(true);
@@ -25,25 +44,36 @@ export default function CodeScreen() {
       const state = await refresh();
       router.replace(state ? (routeToPath(state) as never) : "/age");
     } catch {
-      setError("Invalid code. Try again.");
+      setError("That code isn't right. Try again.");
     } finally {
       setLoading(false);
     }
   }
 
+  const resendLabel =
+    resendSec > 0
+      ? `Resend in 0:${String(resendSec).padStart(2, "0")}`
+      : "Resend code";
+
   return (
     <Screen>
-      <Title>Check your email</Title>
-      <Subtitle>Enter the six-digit code we sent to {email}.</Subtitle>
-      <TextField
-        value={code}
-        onChangeText={setCode}
-        placeholder="000000"
-        keyboardType="number-pad"
-        maxLength={6}
-      />
-      {error ? <Subtitle>{error}</Subtitle> : null}
-      <Button label="Continue" onPress={onVerify} loading={loading} disabled={code.length !== 6} />
+      <Eyebrow>Check your email</Eyebrow>
+      <Headline>Enter the code.</Headline>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
+        <Text style={uiStyles.sentto}>
+          Six digits sent to <Text style={uiStyles.senttoBold}>{email}</Text>.{" "}
+        </Text>
+        <Linkish label="Change" onPress={() => router.back()} />
+      </View>
+
+      <OtpInput value={code} onChange={setCode} error={!!error} />
+      {error ? <ErrText>{error}</ErrText> : null}
+
+      <Text style={uiStyles.resend}>{resendLabel}</Text>
+
+      <Spacer />
+      <Button label="Verify" onPress={onVerify} loading={loading} disabled={code.length !== 6} />
+      <SmallPrint>The code expires in 10 minutes</SmallPrint>
     </Screen>
   );
 }

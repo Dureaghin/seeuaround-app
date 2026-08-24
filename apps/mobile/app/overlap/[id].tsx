@@ -1,22 +1,58 @@
-import { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { routeToPath } from "../../src/lib/resolveRoute";
 import { api } from "../../src/lib/api";
 import { useApp } from "../../src/context/AppContext";
-import { Button, HangoutBanner, Screen, Subtitle, Title } from "../../src/components/ui";
-import { colors, spacing } from "../../src/lib/theme";
+import {
+  Actions,
+  Button,
+  Eyebrow,
+  HangoutBanner,
+  Headline,
+  OverlapGrid,
+  Screen,
+  Spacer,
+  Sub,
+  uiStyles,
+} from "../../src/components/ui";
+import { Text } from "react-native";
+
+const AXIS = ["M", "T", "W", "T", "F", "S", "S"];
 
 export default function OverlapScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { me, refresh } = useApp();
   const [overlap, setOverlap] = useState<Awaited<ReturnType<typeof api.getOverlap>> | null>(null);
+  const [myWeek, setMyWeek] = useState<{ date: string; free: boolean }[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (id) api.getOverlap(id).then(setOverlap).catch(() => {});
+    if (!id) return;
+    api.getOverlap(id).then(setOverlap).catch(() => {});
+    api.getWeek().then((r) => setMyWeek(r.nights)).catch(() => {});
   }, [id]);
+
+  const sharedIndex = useMemo(() => {
+    if (!overlap?.nightDate) return 3;
+    const idx = myWeek.findIndex((n) => n.date === overlap.nightDate);
+    return idx >= 0 ? idx : 3;
+  }, [overlap?.nightDate, myWeek]);
+
+  const rows = useMemo(() => {
+    if (!overlap) return [];
+    return overlap.members.map((m) => {
+      const isYou = m.id === me?.user?.id;
+      const freeIndices = isYou
+        ? myWeek.map((n, i) => (n.free ? i : -1)).filter((i) => i >= 0)
+        : [sharedIndex];
+      return {
+        label: isYou ? "You" : m.firstName,
+        isYou,
+        freeIndices,
+      };
+    });
+  }, [overlap, me?.user?.id, myWeek, sharedIndex]);
 
   async function respond(response: "in" | "out") {
     if (!id) return;
@@ -29,7 +65,9 @@ export default function OverlapScreen() {
     }
   }
 
-  const names = overlap?.members.map((m) => m.firstName).join(", ") ?? "";
+  const others = overlap?.members.filter((m) => m.id !== me?.user?.id) ?? [];
+  const names = others.map((m) => m.firstName).join(" and ");
+  const headline = overlap?.dateLabel?.replace(/,.*$/, " night") ?? "Overlap night";
 
   return (
     <Screen>
@@ -40,36 +78,39 @@ export default function OverlapScreen() {
           onNo={() => api.hangoutCheck(me.pendingHangoutCheck!.overlapId, false)}
         />
       ) : null}
-      <Title>{overlap?.dateLabel ?? "Overlap"}</Title>
-      <Subtitle>You, {names} are all free.</Subtitle>
-      <View style={styles.card}>
-        {overlap?.members.map((m) => (
-          <Text key={m.id} style={styles.member}>
-            {m.firstName}
-            {m.response === "in" ? " ✓" : m.response === "out" ? " ✗" : ""}
-          </Text>
-        ))}
-      </View>
+      <Eyebrow lamp>Overlap</Eyebrow>
+      <Headline>{headline}</Headline>
+      <Sub>
+        You{names ? `, ${names}` : ""} are all free. Nobody had to ask.
+      </Sub>
+
+      {rows.length > 0 ? (
+        <OverlapGrid rows={rows} axisLabels={AXIS} sharedIndex={sharedIndex} />
+      ) : null}
+
+      {overlap?.expiresAt ? (
+        <Text style={uiStyles.expiry}>
+          Answer by{" "}
+          {new Date(overlap.expiresAt).toLocaleString("en-US", {
+            weekday: "short",
+            hour: "numeric",
+            minute: "2-digit",
+          })}
+          , then it's gone
+        </Text>
+      ) : (
+        <Text style={uiStyles.expiry}>Answer soon, then it's gone</Text>
+      )}
+
+      <Spacer />
       {!overlap?.myResponse ? (
-        <>
+        <Actions>
           <Button label="I'm in" onPress={() => respond("in")} loading={loading} />
           <Button label="Not this time" onPress={() => respond("out")} variant="ghost" />
-        </>
+        </Actions>
       ) : (
-        <Subtitle>You responded. Waiting for others…</Subtitle>
+        <Sub>Waiting for others…</Sub>
       )}
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  member: { color: colors.chalk, fontSize: 17, marginBottom: spacing.xs },
-});

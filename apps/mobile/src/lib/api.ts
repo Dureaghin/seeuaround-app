@@ -55,6 +55,8 @@ export const api = {
       body: JSON.stringify({ confirmed: true }),
     }),
 
+  pause: () => request<MeState>("/me/pause", { method: "POST" }),
+
   unpause: () => request<MeState>("/me/unpause", { method: "POST" }),
 
   getWeek: () =>
@@ -76,9 +78,13 @@ export const api = {
         firstName: string;
         status: string;
         freeTonight: boolean;
+        weekSet: boolean;
       }[];
       shortCode: string;
     }>("/connections"),
+
+  getConnection: (id: string) =>
+    request<{ firstName: string; handle: string; status: string }>(`/connections/${id}`),
 
   requestConnection: (shortCode: string) =>
     request("/connections/request", {
@@ -92,6 +98,8 @@ export const api = {
   getOverlap: (id: string) =>
     request<{
       id: string;
+      nightDate: string;
+      expiresAt: string;
       dateLabel: string;
       members: { id: string; handle: string; firstName: string; response: string | null }[];
       myResponse: string | null;
@@ -117,6 +125,14 @@ export const api = {
     }),
 
   createInvite: () => request<{ url: string }>("/invites", { method: "POST" }),
+
+  previewInvite: (token: string) =>
+    request<{ firstName: string }>(`/invites/${token}/preview`, {}, false),
+
+  connectInvite: (token: string) =>
+    request<import("@seeuaround/shared").MeState>(`/invites/${token}/connect`, {
+      method: "POST",
+    }),
 
   registerPush: (token: string, platform: "ios" | "android") =>
     request("/push/register", {

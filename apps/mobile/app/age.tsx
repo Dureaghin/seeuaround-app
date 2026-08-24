@@ -1,9 +1,20 @@
 import { useState } from "react";
+import { Text } from "react-native";
 import { useRouter } from "expo-router";
 import { routeToPath } from "../src/lib/resolveRoute";
 import { api } from "../src/lib/api";
 import { useApp } from "../src/context/AppContext";
-import { Button, Screen, Subtitle, Title } from "../src/components/ui";
+import {
+  Button,
+  DevCheck,
+  Eyebrow,
+  Fineprint,
+  Headline,
+  Screen,
+  Spacer,
+  Sub,
+  uiStyles,
+} from "../src/components/ui";
 
 export default function AgeScreen() {
   const router = useRouter();
@@ -13,8 +24,9 @@ export default function AgeScreen() {
   async function confirm() {
     setLoading(true);
     try {
-      const state = await api.confirmAge();
-      router.replace(routeToPath(state) as never);
+      await api.confirmAge();
+      const state = await refresh();
+      router.replace(routeToPath(state!) as never);
     } finally {
       setLoading(false);
     }
@@ -22,11 +34,26 @@ export default function AgeScreen() {
 
   return (
     <Screen>
-      <Title>18 or older?</Title>
-      <Subtitle>
-        See U Around is for adults only. By continuing you confirm you are 18 or older.
-      </Subtitle>
-      <Button label="I'm 18 or older" onPress={confirm} loading={loading} />
+      <Eyebrow>Signing up</Eyebrow>
+      <Headline>See U Around is 18+.</Headline>
+      <Sub>Your phone already knows your age band. We ask it. It answers yes or no.</Sub>
+
+      <DevCheck />
+
+      <Fineprint
+        title="What we keep"
+        items={[
+          { ok: true, text: "Yes or no, and the date it was checked." },
+          { ok: false, text: "Not your birthday. Not your ID. Not your face." },
+        ]}
+      />
+
+      <Text style={uiStyles.later}>
+        If your region ever needs a stronger check, we'll ask you then — not now.
+      </Text>
+
+      <Spacer />
+      <Button label="Continue" onPress={confirm} loading={loading} />
     </Screen>
   );
 }

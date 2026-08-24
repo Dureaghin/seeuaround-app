@@ -23,54 +23,83 @@ export async function buildMeState(user: AuthedUser): Promise<MeState> {
   const weekStart = startOfWeek();
   const weekEnd = endOfWeek();
 
-  const [{ rows: connRows }, { rows: weekRows }, { rows: overlapRows }, { rows: threadRows }, { rows: hangoutRows }] =
-    await Promise.all([
-      query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count FROM connections
+  const [
+    { rows: connRows },
+    { rows: weekRows },
+    { rows: overlapRows },
+    { rows: threadRows },
+    { rows: hangoutRows },
+    { rows: pendingRows },
+    { rows: missingWeekRows },
+  ] = await Promise.all([
+    query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM connections
          WHERE status = 'accepted' AND (user_a = $1 OR user_b = $1)`,
-        [user.id],
-      ),
-      query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count FROM windows
+      [user.id],
+    ),
+    query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM windows
          WHERE user_id = $1 AND span && tstzrange($2, $3)`,
-        [user.id, weekStart.toISOString(), weekEnd.toISOString()],
-      ),
-      query<{ id: string }>(
-        `SELECT o.id FROM "overlaps" o
+      [user.id, weekStart.toISOString(), weekEnd.toISOString()],
+    ),
+    query<{ id: string }>(
+      `SELECT o.id FROM "overlaps" o
          JOIN overlap_members om ON om.overlap_id = o.id AND om.user_id = $1
          WHERE om.response IS NULL AND o.expires_at > now()
          ORDER BY o.created_at ASC LIMIT 1`,
-        [user.id],
-      ),
-      query<{ id: string }>(
-        `SELECT t.id FROM threads t
+      [user.id],
+    ),
+    query<{ id: string }>(
+      `SELECT t.id FROM threads t
          JOIN overlap_members om ON om.overlap_id = t.overlap_id AND om.user_id = $1
          WHERE om.response = 'in'
            AND t.expires_at > now()
            AND lower((SELECT span FROM "overlaps" WHERE id = t.overlap_id)) <= now() + interval '1 day'
          ORDER BY t.expires_at ASC LIMIT 1`,
-        [user.id],
-      ),
-      query<{ overlap_id: string; night_date: string }>(
-        `SELECT hc.overlap_id, hc.night_date::text
+      [user.id],
+    ),
+    query<{ overlap_id: string; night_date: string }>(
+      `SELECT hc.overlap_id, hc.night_date::text
          FROM hangout_checks hc
          WHERE hc.user_id = $1 AND hc.response IS NULL
            AND hc.night_date = (CURRENT_DATE - interval '1 day')::date
          LIMIT 1`,
-        [user.id],
-      ),
-    ]);
+      [user.id],
+    ),
+    query<{ id: string }>(
+      `SELECT c.id FROM connections c
+         WHERE c.status = 'pending' AND (c.user_a = $1 OR c.user_b = $1)
+         ORDER BY c.created_at ASC LIMIT 1`,
+      [user.id],
+    ),
+    query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+         FROM connections c
+         JOIN users u ON u.id = CASE WHEN c.user_a = $1 THEN c.user_b ELSE c.user_a END
+         WHERE c.status = 'accepted' AND (c.user_a = $1 OR c.user_b = $1)
+           AND NOT EXISTS (
+             SELECT 1 FROM windows w
+             WHERE w.user_id = u.id AND w.span && tstzrange($2, $3)
+           )`,
+      [user.id, weekStart.toISOString(), weekEnd.toISOString()],
+    ),
+  ]);
 
   const connectionCount = Number(connRows[0]?.count ?? 0);
   const weekSet = Number(weekRows[0]?.count ?? 0) > 0;
   const unansweredOverlapId = overlapRows[0]?.id ?? null;
   const activeThreadId = threadRows[0]?.id ?? null;
+  const pendingConnectionId = pendingRows[0]?.id ?? null;
+  const friendsMissingWeek = Number(missingWeekRows[0]?.count ?? 0);
 
   let route: MeState["route"] = "people";
   const routeParams: Record<string, string> = {};
 
   if (!user.ageVerified) {
     route = "age";
+  } else if (pendingConnectionId) {
+    route = "accept";
+    routeParams.id = pendingConnectionId;
   } else if (connectionCount < 5) {
     route = "invite";
   } else if (unansweredOverlapId) {
@@ -83,6 +112,8 @@ export async function buildMeState(user: AuthedUser): Promise<MeState> {
     route = "sunday";
   } else if (user.paused) {
     route = "pause";
+  } else if (friendsMissingWeek > 0) {
+    route = "empty";
   }
 
   const hangout = hangoutRows[0];
@@ -110,77 +141,6 @@ export async function buildMeState(user: AuthedUser): Promise<MeState> {
     unansweredOverlapId,
     activeThreadId,
     pendingHangoutCheck,
+    pendingConnectionId,
   };
-}
-
-export async function runMatchingForUser(userId: string) {
-  const { rows: friends } = await query<{ friend_id: string }>(
-    `SELECT CASE WHEN user_a = $1 THEN user_b ELSE user_a END AS friend_id
-     FROM connections WHERE status = 'accepted' AND (user_a = $1 OR user_b = $1)`,
-    [userId],
-  );
-  if (friends.length === 0) return;
-
-  const friendIds = friends.map((f) => f.friend_id);
-  const { rows: matches } = await query<{
-    friend_id: string;
-    shared_start: string;
-    shared_end: string;
-    night_date: string;
-  }>(
-    `SELECT
-       b.user_id AS friend_id,
-       lower(a.span * b.span) AS shared_start,
-       upper(a.span * b.span) AS shared_end,
-       (lower(a.span * b.span) AT TIME ZONE 'UTC')::date AS night_date
-     FROM windows a
-     JOIN windows b ON b.user_id = ANY($2::uuid[])
-       AND b.span && a.span
-     WHERE a.user_id = $1
-       AND upper(a.span * b.span) - lower(a.span * b.span) >= interval '90 minutes'
-       AND lower(a.span) > now()`,
-    [userId, friendIds],
-  );
-
-  for (const match of matches) {
-    const memberIds = [userId, match.friend_id].sort();
-    const { rows: existing } = await query<{ id: string }>(
-      `SELECT o.id FROM "overlaps" o
-       JOIN overlap_members om ON om.overlap_id = o.id
-       WHERE o.night_date = $1::date
-       GROUP BY o.id
-       HAVING array_agg(om.user_id ORDER BY om.user_id) = $2::uuid[]`,
-      [match.night_date, memberIds],
-    );
-    if (existing[0]) continue;
-
-    const spanStart = match.shared_start;
-    const spanEnd = match.shared_end;
-    const expiresAt = new Date(spanEnd);
-    expiresAt.setDate(expiresAt.getDate() + 1);
-
-    const { rows: overlapRows } = await query<{ id: string }>(
-      `INSERT INTO "overlaps" (span, night_date, expires_at)
-       VALUES (tstzrange($1, $2), $3::date, $4)
-       RETURNING id`,
-      [spanStart, spanEnd, match.night_date, expiresAt.toISOString()],
-    );
-    const overlapId = overlapRows[0].id;
-
-    for (const memberId of memberIds) {
-      await query(
-        `INSERT INTO overlap_members (overlap_id, user_id) VALUES ($1, $2)`,
-        [overlapId, memberId],
-      );
-    }
-
-    await query(
-      `INSERT INTO notifications (user_id, kind, title, body, data)
-       SELECT u.id, 'overlap', 'You overlap tonight',
-         to_char($2::date, 'FMDay') || '. You and a friend are both free.',
-         jsonb_build_object('overlapId', $1::text, 'route', 'overlap')
-       FROM users u WHERE u.id = ANY($3::uuid[])`,
-      [overlapId, match.night_date, memberIds],
-    );
-  }
 }
