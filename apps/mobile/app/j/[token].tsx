@@ -15,7 +15,7 @@ import {
   Sub,
 } from "../../src/components/ui";
 import { BrandIcon } from "../../src/components/Logo";
-import { colors, fonts, spacing } from "../../src/lib/theme";
+import { colors, fonts } from "../../src/lib/theme";
 
 export default function InviteLinkScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
@@ -52,9 +52,6 @@ export default function InviteLinkScreen() {
   if (error) {
     return (
       <Screen bare showLogo={false}>
-        <View style={styles.webChrome}>
-          <Text style={styles.webUrl}>🔒 seeuaround.com/j/{token}</Text>
-        </View>
         <View style={styles.webBody}>
           <Headline>Invite unavailable</Headline>
           <Sub style={{ maxWidth: undefined }}>This link may have expired.</Sub>
@@ -65,12 +62,6 @@ export default function InviteLinkScreen() {
 
   return (
     <Screen bare showLogo={false}>
-      <View style={styles.webChrome}>
-        <Text style={styles.webUrl}>
-          <Text style={styles.webLock}>🔒 </Text>
-          seeuaround.com/j/{token}
-        </Text>
-      </View>
       <View style={styles.webBody}>
         <BrandIcon size={54} />
         <View style={{ marginTop: 24 }}>
@@ -124,22 +115,11 @@ export default function InviteLinkScreen() {
 }
 
 const styles = StyleSheet.create({
-  webChrome: { paddingTop: 52, paddingHorizontal: 14, paddingBottom: 12 },
-  webUrl: {
-    backgroundColor: colors.surface2,
-    borderRadius: 11,
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    fontFamily: fonts.mono,
-    fontSize: 12,
-    color: colors.dim,
-  },
-  webLock: { color: colors.lamp, fontSize: 10 },
   webBody: {
     flex: 1,
     paddingHorizontal: 28,
     paddingBottom: 26,
-    paddingTop: 32,
+    paddingTop: 36,
   },
   subBold: { color: colors.chalk, fontFamily: fonts.bodyMedium },
   facts: { marginTop: 24, borderTopWidth: 1, borderTopColor: colors.line },
