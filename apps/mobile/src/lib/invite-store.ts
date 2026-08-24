@@ -32,9 +32,14 @@ export async function clearStoredInviteUrl(): Promise<void> {
   await SecureStore.deleteItemAsync(INVITE_URL_KEY);
 }
 
-export function formatInviteExpiry(expiresAt: string): string {
-  const ms = new Date(expiresAt).getTime() - Date.now();
-  const days = Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
+export function formatInviteExpiry(
+  expiresAt: string | null | undefined,
+  fallbackDays = 7,
+): string {
+  if (!expiresAt) return `in ${fallbackDays} days`;
+  const end = new Date(expiresAt).getTime();
+  if (Number.isNaN(end)) return `in ${fallbackDays} days`;
+  const days = Math.max(0, Math.ceil((end - Date.now()) / (24 * 60 * 60 * 1000)));
   if (days === 0) return "today";
   if (days === 1) return "in 1 day";
   return `in ${days} days`;

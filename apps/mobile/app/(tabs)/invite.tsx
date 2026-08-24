@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, Share, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
-import { INVITE_MAX_USES } from "@seeuaround/shared";
+import { INVITE_MAX_USES, INVITE_TTL_DAYS } from "@seeuaround/shared";
 import { api } from "../../src/lib/api";
 import { useCopyFeedback } from "../../src/lib/copy-feedback";
 import {
@@ -24,14 +24,35 @@ import {
   uiStyles,
 } from "../../src/components/ui";
 
+function asCount(value: unknown, fallback: number): number {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export default function InviteScreen() {
   const router = useRouter();
   const { me, refresh } = useApp();
   const [inviteUrl, setInviteUrl] = useState("");
-  const [usesRemaining, setUsesRemaining] = useState<number | null>(null);
+  const [usesRemaining, setUsesRemaining] = useState(INVITE_MAX_USES);
   const [maxUses, setMaxUses] = useState(INVITE_MAX_USES);
-  const [expiresLabel, setExpiresLabel] = useState("…");
+  const [expiresLabel, setExpiresLabel] = useState(`in ${INVITE_TTL_DAYS} days`);
   const { copied, copy } = useCopyFeedback("Link copied");
+
+  const applyMeta = useCallback(
+    (meta: { usesRemaining?: unknown; maxUses?: unknown; expiresAt?: unknown }) => {
+      const max = asCount(meta.maxUses, INVITE_MAX_USES);
+      const uses = asCount(meta.usesRemaining, max);
+      setMaxUses(max);
+      setUsesRemaining(uses);
+      setExpiresLabel(
+        formatInviteExpiry(
+          typeof meta.expiresAt === "string" ? meta.expiresAt : null,
+          INVITE_TTL_DAYS,
+        ),
+      );
+    },
+    [],
+  );
 
   const loadInvite = useCallback(async () => {
     try {
@@ -39,33 +60,30 @@ export default function InviteScreen() {
       const storedUrl = await getStoredInviteUrl();
       if (storedUrl) {
         setInviteUrl(storedUrl);
-        setUsesRemaining(active.usesRemaining);
-        setMaxUses(active.maxUses);
-        setExpiresLabel(formatInviteExpiry(active.expiresAt));
+        applyMeta(active);
         return;
       }
     } catch {
-      // No active invite, or stored URL missing — create a fresh link below.
+      // No active invite — create a fresh link below.
     }
 
     const created = await api.createInvite();
     await setStoredInviteUrl(created.url);
     setInviteUrl(created.url);
-    setUsesRemaining(created.usesRemaining);
-    setMaxUses(created.maxUses);
-    setExpiresLabel(formatInviteExpiry(created.expiresAt));
-  }, []);
+    applyMeta(created);
+  }, [applyMeta]);
 
   useFocusEffect(
     useCallback(() => {
-      loadInvite().catch(() => {});
-    }, [loadInvite]),
+      loadInvite().catch(() => {
+        applyMeta({});
+      });
+    }, [loadInvite, applyMeta]),
   );
 
   const token = useMemo(() => inviteUrl.split("/j/")[1] ?? "", [inviteUrl]);
   const count = me?.connectionCount ?? 0;
-  const usesLabel =
-    usesRemaining === null ? "…" : `${usesRemaining} of ${maxUses}`;
+  const usesLabel = `${usesRemaining} of ${maxUses}`;
 
   async function copyLink() {
     await copy(inviteUrl);
