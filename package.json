@@ -1,0 +1,21 @@
+{
+  "name": "seeuaround-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "See U Around — mobile app and API",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @seeuaround/api",
+    "dev:mobile": "npm run start -w @seeuaround/mobile",
+    "build:api": "npm run build -w @seeuaround/api",
+    "migrate": "npm run migrate -w @seeuaround/api",
+    "typecheck": "npm run typecheck -w @seeuaround/mobile && npm run typecheck -w @seeuaround/api"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

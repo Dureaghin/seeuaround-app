@@ -1,0 +1,41 @@
+{
+  "name": "@seeuaround/mobile",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "private": true,
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@seeuaround/shared": "*",
+    "@tanstack/react-query": "^5.85.5",
+    "expo": "~56.0.0",
+    "expo-constants": "~56.0.24",
+    "expo-device": "~56.0.4",
+    "expo-font": "~56.0.7",
+    "expo-linking": "~56.0.17",
+    "expo-notifications": "~56.0.24",
+    "expo-router": "~56.2.19",
+    "expo-secure-store": "~56.0.4",
+    "expo-splash-screen": "~56.0.14",
+    "expo-status-bar": "~56.0.1",
+    "react": "19.2.3",
+    "react-native": "0.85.3",
+    "react-native-gesture-handler": "~2.28.0",
+    "react-native-reanimated": "~4.3.1",
+    "react-native-worklets": "~0.8.0",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-screens": "~4.16.0",
+    "zod": "^3.25.76",
+    "zustand": "^5.0.7"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~5.9.2"
+  }
+}

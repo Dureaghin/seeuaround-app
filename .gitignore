@@ -1,0 +1,10 @@
+node_modules/
+.DS_Store
+.env
+.env.*
+!.env.example
+dist/
+.expo/
+apps/mobile/.expo/
+*.log
+google-play-service-account.json
