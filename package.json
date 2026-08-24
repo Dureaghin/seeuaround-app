@@ -11,7 +11,7 @@
   "scripts": {
     "dev:api": "npm run dev -w @seeuaround/api",
     "dev:mobile": "npm run start -w @seeuaround/mobile",
-    "build:api": "npm run build -w @seeuaround/api",
+    "build:api": "npm run build -w @seeuaround/shared && npm run build -w @seeuaround/api",
     "migrate": "npm run migrate -w @seeuaround/api",
     "typecheck": "npm run typecheck -w @seeuaround/mobile && npm run typecheck -w @seeuaround/api"
   },

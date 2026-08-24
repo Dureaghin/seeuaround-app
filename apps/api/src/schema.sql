@@ -1,5 +1,3 @@
-CREATE EXTENSION IF NOT EXISTS btree_gist;
-
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT NOT NULL UNIQUE,
@@ -63,7 +61,7 @@ CREATE TABLE IF NOT EXISTS windows (
 CREATE INDEX IF NOT EXISTS windows_span_idx ON windows USING GIST (span);
 CREATE INDEX IF NOT EXISTS windows_user_idx ON windows(user_id);
 
-CREATE TABLE IF NOT EXISTS overlaps (
+CREATE TABLE IF NOT EXISTS "overlaps" (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   span TSTZRANGE NOT NULL,
   night_date DATE NOT NULL,
@@ -72,7 +70,7 @@ CREATE TABLE IF NOT EXISTS overlaps (
 );
 
 CREATE TABLE IF NOT EXISTS overlap_members (
-  overlap_id UUID NOT NULL REFERENCES overlaps(id) ON DELETE CASCADE,
+  overlap_id UUID NOT NULL REFERENCES "overlaps"(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   response TEXT,
   PRIMARY KEY (overlap_id, user_id)
@@ -80,7 +78,7 @@ CREATE TABLE IF NOT EXISTS overlap_members (
 
 CREATE TABLE IF NOT EXISTS threads (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  overlap_id UUID NOT NULL UNIQUE REFERENCES overlaps(id) ON DELETE CASCADE,
+  overlap_id UUID NOT NULL UNIQUE REFERENCES "overlaps"(id) ON DELETE CASCADE,
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -132,7 +130,7 @@ CREATE INDEX IF NOT EXISTS notifications_user_idx ON notifications(user_id);
 
 CREATE TABLE IF NOT EXISTS hangout_checks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  overlap_id UUID NOT NULL REFERENCES overlaps(id) ON DELETE CASCADE,
+  overlap_id UUID NOT NULL REFERENCES "overlaps"(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   night_date DATE NOT NULL,
   response TEXT,

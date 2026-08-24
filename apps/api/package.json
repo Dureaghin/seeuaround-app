@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && cp src/schema.sql dist/",
     "start": "node dist/index.js",
     "migrate": "tsx src/migrate.ts",
     "typecheck": "tsc --noEmit"

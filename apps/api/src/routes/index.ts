@@ -267,7 +267,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get("/overlaps/:id", { preHandler: authHook }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { rows: overlapRows } = await query<{ night_date: string }>(
-      `SELECT o.night_date::text FROM overlaps o
+      `SELECT o.night_date::text FROM "overlaps" o
        JOIN overlap_members om ON om.overlap_id = o.id AND om.user_id = $2
        WHERE o.id = $1`,
       [id, request.user!.id],
@@ -327,7 +327,7 @@ export async function registerRoutes(app: FastifyInstance) {
         );
         if (!threadRows[0]) {
           const { rows: overlapRows } = await query<{ expires_at: string }>(
-            `SELECT expires_at FROM overlaps WHERE id = $1`,
+            `SELECT expires_at FROM "overlaps" WHERE id = $1`,
             [id],
           );
           await query(`INSERT INTO threads (overlap_id, expires_at) VALUES ($1, $2)`, [

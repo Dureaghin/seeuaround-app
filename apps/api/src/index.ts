@@ -23,6 +23,9 @@ async function main() {
   if (process.env.DATABASE_URL) {
     boss = new PgBoss(process.env.DATABASE_URL);
     await boss.start();
+    for (const queue of ["deliver-notifications", "sunday-prompt"]) {
+      await boss.createQueue(queue);
+    }
     await boss.schedule("deliver-notifications", "*/5 * * * *", {}, { tz: "UTC" });
     await boss.schedule("sunday-prompt", "0 18 * * 0", {}, { tz: "UTC" });
     await boss.work("deliver-notifications", deliverPendingNotifications);

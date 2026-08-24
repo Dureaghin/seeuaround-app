@@ -36,7 +36,7 @@ export async function buildMeState(user: AuthedUser): Promise<MeState> {
         [user.id, weekStart.toISOString(), weekEnd.toISOString()],
       ),
       query<{ id: string }>(
-        `SELECT o.id FROM overlaps o
+        `SELECT o.id FROM "overlaps" o
          JOIN overlap_members om ON om.overlap_id = o.id AND om.user_id = $1
          WHERE om.response IS NULL AND o.expires_at > now()
          ORDER BY o.created_at ASC LIMIT 1`,
@@ -47,7 +47,7 @@ export async function buildMeState(user: AuthedUser): Promise<MeState> {
          JOIN overlap_members om ON om.overlap_id = t.overlap_id AND om.user_id = $1
          WHERE om.response = 'in'
            AND t.expires_at > now()
-           AND lower((SELECT span FROM overlaps WHERE id = t.overlap_id)) <= now() + interval '1 day'
+           AND lower((SELECT span FROM "overlaps" WHERE id = t.overlap_id)) <= now() + interval '1 day'
          ORDER BY t.expires_at ASC LIMIT 1`,
         [user.id],
       ),
@@ -145,7 +145,7 @@ export async function runMatchingForUser(userId: string) {
   for (const match of matches) {
     const memberIds = [userId, match.friend_id].sort();
     const { rows: existing } = await query<{ id: string }>(
-      `SELECT o.id FROM overlaps o
+      `SELECT o.id FROM "overlaps" o
        JOIN overlap_members om ON om.overlap_id = o.id
        WHERE o.night_date = $1::date
        GROUP BY o.id
@@ -160,7 +160,7 @@ export async function runMatchingForUser(userId: string) {
     expiresAt.setDate(expiresAt.getDate() + 1);
 
     const { rows: overlapRows } = await query<{ id: string }>(
-      `INSERT INTO overlaps (span, night_date, expires_at)
+      `INSERT INTO "overlaps" (span, night_date, expires_at)
        VALUES (tstzrange($1, $2), $3::date, $4)
        RETURNING id`,
       [spanStart, spanEnd, match.night_date, expiresAt.toISOString()],
