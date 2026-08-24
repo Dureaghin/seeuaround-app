@@ -72,7 +72,7 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     if (!config.authEmailEnabled) {
-      console.log(`[dev] auth code for ${email}: ${code}`);
+      request.log.info({ email, devCode: code }, "dev auth code (no email sender configured)");
     }
     return GENERIC_AUTH_MSG;
   });
