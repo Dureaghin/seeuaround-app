@@ -29,9 +29,9 @@ npm run dev:mobile                        # terminal 2
 
 ## Deploy
 
-**API → Railway** — connect this repo, add Postgres, set env vars from `apps/api/.env.example`, domain `api.seeuaround.com`.
+**API → Railway** — connect this repo, add Postgres, set env vars from `apps/api/.env.example`, domain `api.seeuaround.com`. See [docs/dns.md](docs/dns.md) for DNS records.
 
-**Mobile → EAS** — see [docs/ship.md](docs/ship.md).
+**Mobile → EAS** — see [docs/ship.md](docs/ship.md). App API URL: `https://api.seeuaround.com` (set in `apps/mobile/.env`, `app.json`, and `eas.json`).
 
 ## Stack
 
