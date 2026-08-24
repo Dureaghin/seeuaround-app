@@ -40,7 +40,7 @@ export async function registerRoutes(app: FastifyInstance) {
     const email = normalizeEmail(parsed.data.email);
     if (isDisposableEmail(email)) return GENERIC_AUTH_MSG;
 
-    const code = generateCode();
+    const code = config.devAuthCode ?? generateCode();
     const codeHash = hashToken(code);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 

@@ -7,4 +7,8 @@ export const config = {
   isProd: process.env.NODE_ENV === "production",
   /** When false, codes are logged until an email sender is configured. */
   authEmailEnabled: Boolean(process.env.RESEND_API_KEY),
+  /** Fixed OTP when email is not configured. Set DEV_AUTH_CODE= to disable. */
+  devAuthCode:
+    process.env.DEV_AUTH_CODE ??
+    (process.env.RESEND_API_KEY ? undefined : "123456"),
 };
