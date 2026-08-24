@@ -1,9 +1,11 @@
 const resendConfigured = Boolean(process.env.RESEND_API_KEY?.trim());
 
-/** Test OTP until USE_PRODUCTION_AUTH=true (real email + random codes). */
+/** Test OTP. Explicit DEV_AUTH_CODE always wins; otherwise off when production auth is on. */
 export function getDevAuthCode(): string | undefined {
+  const configured = process.env.DEV_AUTH_CODE?.trim();
+  if (configured) return configured;
   if (process.env.USE_PRODUCTION_AUTH === "true") return undefined;
-  return process.env.DEV_AUTH_CODE?.trim() || "123456";
+  return "123456";
 }
 
 export const config = {

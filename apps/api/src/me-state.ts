@@ -144,3 +144,7 @@ export async function buildMeState(user: AuthedUser): Promise<MeState> {
     pendingConnectionId,
   };
 }
+
+export async function runMatchingForUser(_userId: string): Promise<void> {
+  // Overlap matching runs on a schedule; week updates enqueue via windows insert.
+}

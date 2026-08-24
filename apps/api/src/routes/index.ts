@@ -31,19 +31,28 @@ const GENERIC_AUTH_MSG = {
 };
 
 async function ensureUserId(email: string): Promise<string | null> {
-  const { rows } = await query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [email]);
-  if (rows[0]) return rows[0].id;
+  const normalized = normalizeEmail(email);
+  const existing = await query<{ id: string }>(
+    `SELECT id FROM users WHERE email = $1`,
+    [normalized],
+  );
+  if (existing.rows[0]) return existing.rows[0].id;
 
-  const handle = email.split("@")[0].slice(0, 20);
+  const handle = normalized.split("@")[0].slice(0, 20);
   let shortCode = generateShortCode();
   for (let i = 0; i < 5; i++) {
     try {
-      const { rows: created } = await query<{ id: string }>(
+      const created = await query<{ id: string }>(
         `INSERT INTO users (email, handle, first_name, short_code) VALUES ($1, $2, $3, $4) RETURNING id`,
-        [email, handle, handle, shortCode],
+        [normalized, handle, handle, shortCode],
       );
-      return created[0]?.id ?? null;
+      return created.rows[0]?.id ?? null;
     } catch {
+      const retry = await query<{ id: string }>(
+        `SELECT id FROM users WHERE email = $1`,
+        [normalized],
+      );
+      if (retry.rows[0]) return retry.rows[0].id;
       shortCode = generateShortCode();
     }
   }
@@ -111,7 +120,10 @@ export async function registerRoutes(app: FastifyInstance) {
     if (devCode && parsed.data.code === devCode) {
       await query(`DELETE FROM auth_codes WHERE email = $1`, [email]);
       const userId = await ensureUserId(email);
-      if (!userId) return reply.code(400).send({ error: "invalid_code" });
+      if (!userId) {
+        request.log.warn({ email }, "verify: could not resolve user");
+        return reply.code(400).send({ error: "invalid_code" });
+      }
       return { token: await createSession(userId) };
     }
 
@@ -139,7 +151,10 @@ export async function registerRoutes(app: FastifyInstance) {
 
     await query(`DELETE FROM auth_codes WHERE email = $1`, [email]);
     const userId = await ensureUserId(email);
-    if (!userId) return reply.code(400).send({ error: "invalid_code" });
+    if (!userId) {
+      request.log.warn({ email }, "verify: could not resolve user after code check");
+      return reply.code(400).send({ error: "invalid_code" });
+    }
 
     return { token: await createSession(userId) };
   });
