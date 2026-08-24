@@ -2,6 +2,18 @@ import { z } from "zod";
 
 export const SITE = "https://seeuaround.com";
 
+export const INVITE_MAX_USES = 5;
+export const INVITE_TTL_DAYS = 7;
+
+export type InviteInfo = {
+  url: string;
+  usesRemaining: number;
+  maxUses: number;
+  expiresAt: string;
+};
+
+export type InviteStatus = Omit<InviteInfo, "url">;
+
 export const AppRoute = z.enum([
   "auth",
   "age",

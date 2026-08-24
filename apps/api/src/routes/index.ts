@@ -8,6 +8,8 @@ import {
   SendCodeSchema,
   ThreadMessageSchema,
   DeleteAccountSchema,
+  INVITE_MAX_USES,
+  INVITE_TTL_DAYS,
   VerifyCodeSchema,
   WeekWindowsSchema,
 } from "@seeuaround/shared";
@@ -522,14 +524,46 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.post("/invites", { preHandler: authHook }, async (request) => {
+    const userId = request.user!.id;
+
+    await query(
+      `UPDATE invite_tokens SET revoked_at = now()
+       WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()`,
+      [userId],
+    );
+
     const token = generateInviteToken();
     const tokenHash = hashToken(token);
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
     await query(
-      `INSERT INTO invite_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
-      [request.user!.id, tokenHash, expiresAt.toISOString()],
+      `INSERT INTO invite_tokens (user_id, token_hash, expires_at, uses_remaining)
+       VALUES ($1, $2, $3, $4)`,
+      [userId, tokenHash, expiresAt.toISOString(), INVITE_MAX_USES],
     );
-    return { url: `${config.webUrl}/j/${token}` };
+
+    return {
+      url: `${config.webUrl}/j/${token}`,
+      usesRemaining: INVITE_MAX_USES,
+      maxUses: INVITE_MAX_USES,
+      expiresAt: expiresAt.toISOString(),
+    };
+  });
+
+  app.get("/invites/active", { preHandler: authHook }, async (request, reply) => {
+    const { rows } = await query<{ uses_remaining: number; expires_at: string }>(
+      `SELECT uses_remaining, expires_at FROM invite_tokens
+       WHERE user_id = $1 AND revoked_at IS NULL
+         AND expires_at > now() AND uses_remaining > 0
+       ORDER BY created_at DESC LIMIT 1`,
+      [request.user!.id],
+    );
+    if (!rows[0]) return reply.code(404).send({ error: "not_found" });
+
+    return {
+      usesRemaining: rows[0].uses_remaining,
+      maxUses: INVITE_MAX_USES,
+      expiresAt: rows[0].expires_at,
+    };
   });
 
   app.get("/invites/:token/preview", async (request, reply) => {

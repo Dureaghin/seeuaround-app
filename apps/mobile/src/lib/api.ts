@@ -1,4 +1,4 @@
-import type { MeState } from "@seeuaround/shared";
+import type { InviteInfo, InviteStatus } from "@seeuaround/shared";
 import { getToken } from "./auth-store";
 import { API_URL } from "./config";
 
@@ -128,7 +128,9 @@ export const api = {
       body: JSON.stringify({ body }),
     }),
 
-  createInvite: () => request<{ url: string }>("/invites", { method: "POST" }),
+  createInvite: () => request<InviteInfo>("/invites", { method: "POST" }),
+
+  getActiveInvite: () => request<InviteStatus>("/invites/active"),
 
   previewInvite: (token: string) =>
     request<{ firstName: string }>(`/invites/${token}/preview`, {}, false),
