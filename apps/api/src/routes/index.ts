@@ -30,6 +30,42 @@ const GENERIC_AUTH_MSG = {
   message: "If that email is registered, a code is on its way.",
 };
 
+async function ensureUserId(email: string): Promise<string | null> {
+  const { rows } = await query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [email]);
+  if (rows[0]) return rows[0].id;
+
+  const handle = email.split("@")[0].slice(0, 20);
+  let shortCode = generateShortCode();
+  for (let i = 0; i < 5; i++) {
+    try {
+      const { rows: created } = await query<{ id: string }>(
+        `INSERT INTO users (email, handle, first_name, short_code) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [email, handle, handle, shortCode],
+      );
+      return created[0]?.id ?? null;
+    } catch {
+      shortCode = generateShortCode();
+    }
+  }
+  return null;
+}
+
+async function createSession(userId: string): Promise<string> {
+  const token = generateToken();
+  const tokenHash = hashToken(token);
+  const sessionExpires = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+  await query(
+    `INSERT INTO sessions (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+    [userId, tokenHash, sessionExpires.toISOString()],
+  );
+  return token;
+}
+
+function codeExpired(expiresAt: string | Date): boolean {
+  const at = expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
+  return Number.isNaN(at.getTime()) || at.getTime() < Date.now();
+}
+
 export async function registerRoutes(app: FastifyInstance) {
   app.get("/health", async () => ({ ok: true }));
 
@@ -56,19 +92,7 @@ export async function registerRoutes(app: FastifyInstance) {
     );
 
     if (!rows[0]) {
-      const handle = email.split("@")[0].slice(0, 20);
-      let shortCode = generateShortCode();
-      for (let i = 0; i < 5; i++) {
-        try {
-          await query(
-            `INSERT INTO users (email, handle, first_name, short_code) VALUES ($1, $2, $3, $4)`,
-            [email, handle, handle, shortCode],
-          );
-          break;
-        } catch {
-          shortCode = generateShortCode();
-        }
-      }
+      await ensureUserId(email);
     }
 
     if (!config.authEmailEnabled) {
@@ -82,47 +106,42 @@ export async function registerRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
 
     const email = normalizeEmail(parsed.data.email);
+    const devCode = getDevAuthCode();
+
+    if (devCode && parsed.data.code === devCode) {
+      await query(`DELETE FROM auth_codes WHERE email = $1`, [email]);
+      const userId = await ensureUserId(email);
+      if (!userId) return reply.code(400).send({ error: "invalid_code" });
+      return { token: await createSession(userId) };
+    }
+
     const { rows } = await query<{
       id: string;
       code_hash: string;
       attempts: number;
-      expires_at: string;
+      expires_at: string | Date;
     }>(
       `SELECT id, code_hash, attempts, expires_at FROM auth_codes
        WHERE email = $1 ORDER BY created_at DESC LIMIT 1`,
       [email],
     );
     const row = rows[0];
-    if (!row || new Date(row.expires_at) < new Date()) {
+    if (!row || codeExpired(row.expires_at)) {
       return reply.code(400).send({ error: "invalid_code" });
     }
     if (row.attempts >= 5) return reply.code(400).send({ error: "code_expired" });
 
-    const devCode = getDevAuthCode();
     const codeHash = hashToken(parsed.data.code);
-    const devMatch = devCode !== undefined && parsed.data.code === devCode;
-    if (!devMatch && !safeEqual(codeHash, row.code_hash)) {
+    if (!safeEqual(codeHash, row.code_hash)) {
       await query(`UPDATE auth_codes SET attempts = attempts + 1 WHERE id = $1`, [row.id]);
       return reply.code(400).send({ error: "invalid_code" });
     }
 
     await query(`DELETE FROM auth_codes WHERE email = $1`, [email]);
-    const { rows: userRows } = await query<{ id: string }>(
-      `SELECT id FROM users WHERE email = $1`,
-      [email],
-    );
-    const userId = userRows[0]?.id;
+    const userId = await ensureUserId(email);
     if (!userId) return reply.code(400).send({ error: "invalid_code" });
 
-    const token = generateToken();
-    const tokenHash = hashToken(token);
-    const sessionExpires = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
-    await query(
-      `INSERT INTO sessions (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
-      [userId, tokenHash, sessionExpires.toISOString()],
-    );
-
-    return { token };
+    return { token: await createSession(userId) };
   });
 
   app.get("/me/state", { preHandler: authHook }, async (request) =>

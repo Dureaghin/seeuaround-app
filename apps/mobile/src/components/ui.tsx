@@ -1,6 +1,7 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -130,6 +131,7 @@ export function OtpInput({
   error?: boolean;
 }) {
   const refs = useRef<(TextInputType | null)[]>([]);
+  const [focused, setFocused] = useState<number | null>(null);
   const digits = value.padEnd(6, " ").slice(0, 6).split("");
 
   function updateAt(index: number, char: string) {
@@ -147,19 +149,37 @@ export function OtpInput({
   return (
     <View style={[styles.otp, error && styles.otpBad]}>
       {digits.map((d, i) => (
-        <TextInput
-          key={i}
-          ref={(r) => {
-            refs.current[i] = r;
-          }}
-          value={d.trim()}
-          onChangeText={(t) => updateAt(i, t.slice(-1))}
-          onKeyPress={({ nativeEvent }) => onKey(i, nativeEvent.key)}
-          keyboardType="number-pad"
-          maxLength={1}
-          style={[styles.otpCell, d.trim() && styles.otpFilled]}
-          selectTextOnFocus
-        />
+        <View key={i} style={styles.otpCellWrap}>
+          <TextInput
+            ref={(r) => {
+              refs.current[i] = r;
+            }}
+            value={d.trim()}
+            onChangeText={(t) => {
+              const cleaned = t.replace(/\D/g, "");
+              if (cleaned.length > 1) {
+                onChange(cleaned.slice(0, 6));
+                refs.current[Math.min(cleaned.length, 5)]?.focus();
+                return;
+              }
+              updateAt(i, cleaned.slice(-1));
+            }}
+            onKeyPress={({ nativeEvent }) => onKey(i, nativeEvent.key)}
+            keyboardType="number-pad"
+            inputMode="numeric"
+            autoComplete={i === 0 ? "one-time-code" : "off"}
+            maxLength={i === 0 ? 6 : 1}
+            style={[
+              styles.otpCell,
+              d.trim() && styles.otpFilled,
+              focused === i && styles.otpFocused,
+              error && styles.otpCellError,
+            ]}
+            onFocus={() => setFocused(i)}
+            onBlur={() => setFocused((f) => (f === i ? null : f))}
+            selectTextOnFocus
+          />
+        </View>
       ))}
     </View>
   );
@@ -652,11 +672,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 24,
   },
-  otp: { flexDirection: "row", gap: 8, marginTop: 26 },
+  otp: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 26,
+    width: "100%",
+    alignSelf: "stretch",
+  },
   otpBad: {},
-  otpCell: {
+  otpCellWrap: {
     flex: 1,
-    aspectRatio: 1 / 1.2,
+    minWidth: 0,
+  },
+  otpCell: {
+    width: "100%",
+    height: Platform.OS === "web" ? 52 : 56,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.line,
@@ -664,7 +694,19 @@ const styles = StyleSheet.create({
     color: colors.chalk,
     fontFamily: fonts.mono,
     fontSize: 23,
+    lineHeight: Platform.OS === "web" ? 52 : 56,
     textAlign: "center",
+    paddingVertical: 0,
+    ...(Platform.OS === "web"
+      ? ({ outlineStyle: "none" } as object)
+      : null),
+  },
+  otpFocused: {
+    borderColor: colors.lamp,
+    backgroundColor: "rgba(243,194,103,0.07)",
+  },
+  otpCellError: {
+    borderColor: "rgba(224,110,90,0.65)",
   },
   otpFilled: { borderColor: "rgba(243,194,103,0.4)" },
   fineprint: {

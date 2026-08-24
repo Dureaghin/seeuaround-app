@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Text } from "react-native";
 import { useRouter } from "expo-router";
 import { api } from "../../src/lib/api";
+import { rememberAuthEmail } from "../../src/lib/auth-email";
 import {
   Button,
   Eyebrow,
@@ -28,7 +29,8 @@ export default function EmailScreen() {
     setError("");
     try {
       await api.sendCode(email.trim());
-      router.push({ pathname: "/(auth)/code", params: { email: email.trim() } });
+      rememberAuthEmail(email.trim().toLowerCase());
+      router.replace({ pathname: "/(auth)/code", params: { email: email.trim() } });
     } catch {
       setError("Something went wrong. Try again.");
     } finally {
