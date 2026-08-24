@@ -3,12 +3,14 @@ import { Text } from "react-native";
 import { api } from "../../src/lib/api";
 import { useCopyFeedback } from "../../src/lib/copy-feedback";
 import { useApp } from "../../src/context/AppContext";
+import { AccountSheet } from "../../src/components/AccountSheet";
 import {
   CodeCard,
   Eyebrow,
   GroupHeader,
   HangoutBanner,
   PersonRow,
+  QuietLink,
   Screen,
   Spacer,
   Sub,
@@ -17,6 +19,7 @@ import {
 
 export default function PeopleScreen() {
   const { me, refresh } = useApp();
+  const [accountOpen, setAccountOpen] = useState(false);
   const [connections, setConnections] = useState<
     Awaited<ReturnType<typeof api.getConnections>>["connections"]
   >([]);
@@ -85,6 +88,8 @@ export default function PeopleScreen() {
       ) : null}
 
       <Spacer />
+      <QuietLink label="Account" onPress={() => setAccountOpen(true)} />
+      <AccountSheet visible={accountOpen} onClose={() => setAccountOpen(false)} />
     </Screen>
   );
 }

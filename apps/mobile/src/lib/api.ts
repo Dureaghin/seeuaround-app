@@ -155,4 +155,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ happened }),
     }),
+
+  logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+
+  sendDeleteCode: () => request<{ ok: boolean }>("/me/delete/send-code", { method: "POST" }),
+
+  deleteAccount: (code: string) =>
+    request<void>("/me/delete", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
 };

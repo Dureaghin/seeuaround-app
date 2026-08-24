@@ -7,6 +7,7 @@ import {
   RegisterPushSchema,
   SendCodeSchema,
   ThreadMessageSchema,
+  DeleteAccountSchema,
   VerifyCodeSchema,
   WeekWindowsSchema,
 } from "@seeuaround/shared";
@@ -75,6 +76,53 @@ function codeExpired(expiresAt: string | Date): boolean {
   return Number.isNaN(at.getTime()) || at.getTime() < Date.now();
 }
 
+async function issueAuthCode(email: string, log: FastifyInstance["log"]): Promise<string> {
+  const code = getDevAuthCode() ?? generateCode();
+  const codeHash = hashToken(code);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await query(`DELETE FROM auth_codes WHERE email = $1`, [email]);
+  await query(
+    `INSERT INTO auth_codes (email, code_hash, expires_at) VALUES ($1, $2, $3)`,
+    [email, codeHash, expiresAt.toISOString()],
+  );
+
+  if (!config.authEmailEnabled) {
+    log.info({ email, devCode: code }, "dev auth code (no email sender configured)");
+  }
+  return code;
+}
+
+async function verifyAuthCode(email: string, code: string): Promise<boolean> {
+  const devCode = getDevAuthCode();
+  if (devCode && code === devCode) {
+    await query(`DELETE FROM auth_codes WHERE email = $1`, [email]);
+    return true;
+  }
+
+  const { rows } = await query<{
+    id: string;
+    code_hash: string;
+    attempts: number;
+    expires_at: string | Date;
+  }>(
+    `SELECT id, code_hash, attempts, expires_at FROM auth_codes
+     WHERE email = $1 ORDER BY created_at DESC LIMIT 1`,
+    [email],
+  );
+  const row = rows[0];
+  if (!row || codeExpired(row.expires_at) || row.attempts >= 5) return false;
+
+  const codeHash = hashToken(code);
+  if (!safeEqual(codeHash, row.code_hash)) {
+    await query(`UPDATE auth_codes SET attempts = attempts + 1 WHERE id = $1`, [row.id]);
+    return false;
+  }
+
+  await query(`DELETE FROM auth_codes WHERE email = $1`, [email]);
+  return true;
+}
+
 export async function registerRoutes(app: FastifyInstance) {
   app.get("/health", async () => ({ ok: true }));
 
@@ -85,16 +133,6 @@ export async function registerRoutes(app: FastifyInstance) {
     const email = normalizeEmail(parsed.data.email);
     if (isDisposableEmail(email)) return GENERIC_AUTH_MSG;
 
-    const code = getDevAuthCode() ?? generateCode();
-    const codeHash = hashToken(code);
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-    await query(`DELETE FROM auth_codes WHERE email = $1`, [email]);
-    await query(
-      `INSERT INTO auth_codes (email, code_hash, expires_at) VALUES ($1, $2, $3)`,
-      [email, codeHash, expiresAt.toISOString()],
-    );
-
     const { rows } = await query<{ id: string }>(
       `SELECT id FROM users WHERE email = $1`,
       [email],
@@ -104,9 +142,7 @@ export async function registerRoutes(app: FastifyInstance) {
       await ensureUserId(email);
     }
 
-    if (!config.authEmailEnabled) {
-      request.log.info({ email, devCode: code }, "dev auth code (no email sender configured)");
-    }
+    await issueAuthCode(email, request.log);
     return GENERIC_AUTH_MSG;
   });
 
@@ -115,41 +151,11 @@ export async function registerRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
 
     const email = normalizeEmail(parsed.data.email);
-    const devCode = getDevAuthCode();
-
-    if (devCode && parsed.data.code === devCode) {
-      await query(`DELETE FROM auth_codes WHERE email = $1`, [email]);
-      const userId = await ensureUserId(email);
-      if (!userId) {
-        request.log.warn({ email }, "verify: could not resolve user");
-        return reply.code(400).send({ error: "invalid_code" });
-      }
-      return { token: await createSession(userId) };
-    }
-
-    const { rows } = await query<{
-      id: string;
-      code_hash: string;
-      attempts: number;
-      expires_at: string | Date;
-    }>(
-      `SELECT id, code_hash, attempts, expires_at FROM auth_codes
-       WHERE email = $1 ORDER BY created_at DESC LIMIT 1`,
-      [email],
-    );
-    const row = rows[0];
-    if (!row || codeExpired(row.expires_at)) {
-      return reply.code(400).send({ error: "invalid_code" });
-    }
-    if (row.attempts >= 5) return reply.code(400).send({ error: "code_expired" });
-
-    const codeHash = hashToken(parsed.data.code);
-    if (!safeEqual(codeHash, row.code_hash)) {
-      await query(`UPDATE auth_codes SET attempts = attempts + 1 WHERE id = $1`, [row.id]);
+    const valid = await verifyAuthCode(email, parsed.data.code);
+    if (!valid) {
       return reply.code(400).send({ error: "invalid_code" });
     }
 
-    await query(`DELETE FROM auth_codes WHERE email = $1`, [email]);
     const userId = await ensureUserId(email);
     if (!userId) {
       request.log.warn({ email }, "verify: could not resolve user after code check");
@@ -159,9 +165,34 @@ export async function registerRoutes(app: FastifyInstance) {
     return { token: await createSession(userId) };
   });
 
+  app.post("/auth/logout", { preHandler: authHook }, async (request) => {
+    const header = request.headers.authorization;
+    if (header?.startsWith("Bearer ")) {
+      const tokenHash = hashToken(header.slice(7));
+      await query(`DELETE FROM sessions WHERE token_hash = $1`, [tokenHash]);
+    }
+    return { ok: true };
+  });
+
   app.get("/me/state", { preHandler: authHook }, async (request) =>
     buildMeState(request.user!),
   );
+
+  app.post("/me/delete/send-code", { preHandler: authHook }, async (request) => {
+    await issueAuthCode(request.user!.email, request.log);
+    return { ok: true };
+  });
+
+  app.post("/me/delete", { preHandler: authHook }, async (request, reply) => {
+    const parsed = DeleteAccountSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+
+    const valid = await verifyAuthCode(request.user!.email, parsed.data.code);
+    if (!valid) return reply.code(400).send({ error: "invalid_code" });
+
+    await query(`DELETE FROM users WHERE id = $1`, [request.user!.id]);
+    return reply.code(204).send();
+  });
 
   app.post("/me/age", { preHandler: authHook }, async (request, reply) => {
     const parsed = AgeConfirmSchema.safeParse(request.body);

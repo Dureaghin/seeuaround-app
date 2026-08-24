@@ -97,6 +97,11 @@ export const AgeConfirmSchema = z.object({
 });
 export type AgeConfirmInput = z.infer<typeof AgeConfirmSchema>;
 
+export const DeleteAccountSchema = z.object({
+  code: z.string().regex(/^\d{6}$/),
+});
+export type DeleteAccountInput = z.infer<typeof DeleteAccountSchema>;
+
 export type Connection = {
   id: string;
   handle: string;
