@@ -1,3 +1,5 @@
+const resendConfigured = Boolean(process.env.RESEND_API_KEY?.trim());
+
 export const config = {
   port: Number(process.env.PORT) || 3001,
   jwtSecret: process.env.JWT_SECRET || "dev-secret-change-me",
@@ -5,10 +7,10 @@ export const config = {
   webUrl: process.env.WEB_URL || "https://seeuaround.com",
   expoAccessToken: process.env.EXPO_ACCESS_TOKEN,
   isProd: process.env.NODE_ENV === "production",
-  /** When false, codes are logged until an email sender is configured. */
-  authEmailEnabled: Boolean(process.env.RESEND_API_KEY),
-  /** Fixed OTP when email is not configured. Set DEV_AUTH_CODE= to disable. */
-  devAuthCode:
-    process.env.DEV_AUTH_CODE ??
-    (process.env.RESEND_API_KEY ? undefined : "123456"),
+  /** Real email delivery via Resend (requires non-empty API key). */
+  authEmailEnabled: resendConfigured,
+  /** Fixed OTP until Resend is configured. Override with DEV_AUTH_CODE. */
+  devAuthCode: resendConfigured
+    ? process.env.DEV_AUTH_CODE?.trim() || undefined
+    : process.env.DEV_AUTH_CODE?.trim() || "123456",
 };

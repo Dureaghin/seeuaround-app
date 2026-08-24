@@ -40,7 +40,11 @@ export default function CodeScreen() {
     try {
       const { token } = await api.verifyCode(email!, code);
       await setToken(token);
-      await registerForPush();
+      try {
+        await registerForPush();
+      } catch {
+        // Push unavailable on web / Expo Go — auth still succeeded.
+      }
       const state = await refresh();
       router.replace(state ? (routeToPath(state) as never) : "/age");
     } catch {
