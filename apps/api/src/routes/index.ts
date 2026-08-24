@@ -71,7 +71,9 @@ export async function registerRoutes(app: FastifyInstance) {
       }
     }
 
-    if (!config.isProd) console.log(`[dev] auth code for ${email}: ${code}`);
+    if (!config.authEmailEnabled) {
+      console.log(`[dev] auth code for ${email}: ${code}`);
+    }
     return GENERIC_AUTH_MSG;
   });
 

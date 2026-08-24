@@ -5,4 +5,6 @@ export const config = {
   webUrl: process.env.WEB_URL || "https://seeuaround.com",
   expoAccessToken: process.env.EXPO_ACCESS_TOKEN,
   isProd: process.env.NODE_ENV === "production",
+  /** When false, codes are logged until an email sender is configured. */
+  authEmailEnabled: Boolean(process.env.RESEND_API_KEY),
 };
