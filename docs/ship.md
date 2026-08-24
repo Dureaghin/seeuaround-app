@@ -47,11 +47,13 @@ eas submit --platform android   # Play internal track
 ### iOS
 - App Store Connect: create app `com.seeuaround.app`
 - Age rating 17+, privacy: email + availability only (no location/calendar)
+- **Account deletion:** verify People → Account → Delete account works in TestFlight (email code, then hard delete). Apple requires in-app deletion for apps that support account creation.
 - TestFlight: invite your 40-person pocket
 
 ### Android
 - Play Console: create app, internal testing track
 - Data safety: email, availability; no location
+- **Account deletion:** same flow as iOS — confirm delete works on a real build
 - Target API 34+
 
 ## 5. Production

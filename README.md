@@ -21,11 +21,23 @@ npm install
 
 cp apps/api/.env.example apps/api/.env    # set DATABASE_URL
 npm run migrate
-npm run dev:api                           # terminal 1
+npm run dev:api                           # terminal 1 → http://localhost:3001
 
 cp apps/mobile/.env.example apps/mobile/.env
-npm run dev:mobile                        # terminal 2
+npm run dev:mobile                        # terminal 2 → Expo (web: http://localhost:8081)
 ```
+
+Local API URL defaults to `http://localhost:3001` in `apps/mobile/src/lib/config.ts`.
+
+## Product surfaces (recent)
+
+| Feature | Where |
+|---|---|
+| **Account** (sign out, delete account) | People tab → Account |
+| **Add by code** (`SU-XXXX-XXXX`) | Sign-up email screen, People → Add by code, `/add-code?code=…` deep link |
+| **Invite link** | Invite tab — share link; uses remaining on API when deployed |
+
+Account deletion requires a fresh email code (App Store requirement). Redeploy the API to Railway after pulling endpoint changes.
 
 ## Deploy
 
