@@ -10,6 +10,7 @@ import {
   DeleteAccountSchema,
   INVITE_MAX_USES,
   INVITE_TTL_DAYS,
+  PauseSchema,
   VerifyCodeSchema,
   WeekWindowsSchema,
 } from "@seeuaround/shared";
@@ -24,9 +25,18 @@ import {
   normalizeEmail,
   safeEqual,
 } from "../crypto.js";
-import { query } from "../db.js";
+import { query, withTransaction } from "../db.js";
 import { buildMeState, runMatchingForUser } from "../me-state.js";
 import { config, getDevAuthCode } from "../config.js";
+import { computePauseUntil, isValidTimezone } from "../pause-until.js";
+
+const AUTH_SEND_CODE_LIMIT = {
+  config: { rateLimit: { max: 5, timeWindow: "15 minutes" } },
+};
+
+const AUTH_VERIFY_LIMIT = {
+  config: { rateLimit: { max: 10, timeWindow: "15 minutes" } },
+};
 
 const GENERIC_AUTH_MSG = {
   ok: true,
@@ -89,7 +99,7 @@ async function issueAuthCode(email: string, log: FastifyInstance["log"]): Promis
     [email, codeHash, expiresAt.toISOString()],
   );
 
-  if (!config.authEmailEnabled) {
+  if (!config.authEmailEnabled && !config.isProd) {
     log.info({ email, devCode: code }, "dev auth code (no email sender configured)");
   }
   return code;
@@ -98,6 +108,7 @@ async function issueAuthCode(email: string, log: FastifyInstance["log"]): Promis
 async function verifyAuthCode(email: string, code: string): Promise<boolean> {
   const devCode = getDevAuthCode();
   if (devCode && code === devCode) {
+    if (config.isProd) return false;
     await query(`DELETE FROM auth_codes WHERE email = $1`, [email]);
     return true;
   }
@@ -128,7 +139,7 @@ async function verifyAuthCode(email: string, code: string): Promise<boolean> {
 export async function registerRoutes(app: FastifyInstance) {
   app.get("/health", async () => ({ ok: true }));
 
-  app.post("/auth/send-code", async (request, reply) => {
+  app.post("/auth/send-code", AUTH_SEND_CODE_LIMIT, async (request, reply) => {
     const parsed = SendCodeSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_email" });
 
@@ -148,7 +159,7 @@ export async function registerRoutes(app: FastifyInstance) {
     return GENERIC_AUTH_MSG;
   });
 
-  app.post("/auth/verify", async (request, reply) => {
+  app.post("/auth/verify", AUTH_VERIFY_LIMIT, async (request, reply) => {
     const parsed = VerifyCodeSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
 
@@ -203,19 +214,30 @@ export async function registerRoutes(app: FastifyInstance) {
     return buildMeState({ ...request.user!, ageVerified: true });
   });
 
-  app.post("/me/pause", { preHandler: authHook }, async (request) => {
-    await query(`UPDATE users SET paused = TRUE WHERE id = $1`, [request.user!.id]);
+  app.post("/me/pause", { preHandler: authHook }, async (request, reply) => {
+    const parsed = PauseSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+
+    const pauseUntil = computePauseUntil(parsed.data.until, request.user!.timezone);
+    await query(
+      `UPDATE users SET paused = TRUE, pause_until = $2 WHERE id = $1`,
+      [request.user!.id, pauseUntil?.toISOString() ?? null],
+    );
     return buildMeState({ ...request.user!, paused: true });
   });
 
   app.post("/me/unpause", { preHandler: authHook }, async (request) => {
-    await query(`UPDATE users SET paused = FALSE WHERE id = $1`, [request.user!.id]);
+    await query(`UPDATE users SET paused = FALSE, pause_until = NULL WHERE id = $1`, [
+      request.user!.id,
+    ]);
     return buildMeState({ ...request.user!, paused: false });
   });
 
   app.patch("/me/timezone", { preHandler: authHook }, async (request, reply) => {
     const tz = (request.body as { timezone?: string })?.timezone;
-    if (!tz) return reply.code(400).send({ error: "invalid_timezone" });
+    if (!tz || !isValidTimezone(tz)) {
+      return reply.code(400).send({ error: "invalid_timezone" });
+    }
     await query(`UPDATE users SET timezone = $1 WHERE id = $2`, [tz, request.user!.id]);
     return { ok: true };
   });
@@ -233,10 +255,16 @@ export async function registerRoutes(app: FastifyInstance) {
       [userId, weekDates],
     );
 
-    for (const date of dates) {
+    if (dates.length > 0) {
+      const params: unknown[] = [userId];
+      const values = dates.map((date, i) => {
+        const base = i * 2 + 2;
+        params.push(`${date}T18:00:00.000Z`, `${date}T23:59:59.000Z`);
+        return `($1, tstzrange($${base}, $${base + 1}), 'manual')`;
+      });
       await query(
-        `INSERT INTO windows (user_id, span, source) VALUES ($1, tstzrange($2, $3), 'manual')`,
-        [userId, `${date}T18:00:00.000Z`, `${date}T23:59:59.000Z`],
+        `INSERT INTO windows (user_id, span, source) VALUES ${values.join(", ")}`,
+        params,
       );
     }
 
@@ -415,10 +443,11 @@ export async function registerRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
 
     const { id } = request.params as { id: string };
-    await query(
+    const { rowCount } = await query(
       `UPDATE overlap_members SET response = $1 WHERE overlap_id = $2 AND user_id = $3`,
       [parsed.data.response === "in" ? "in" : "out", id, request.user!.id],
     );
+    if (!rowCount) return reply.code(404).send({ error: "not_found" });
 
     if (parsed.data.response === "in") {
       const { rows: ins } = await query<{ count: string }>(
@@ -595,16 +624,27 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const [userA, userB] = [request.user!.id, inviterId].sort();
-    await query(
-      `INSERT INTO connections (user_a, user_b, status) VALUES ($1, $2, 'pending')
-       ON CONFLICT (user_a, user_b) DO NOTHING`,
-      [userA, userB],
-    );
-    await query(
-      `UPDATE invite_tokens SET uses_remaining = uses_remaining - 1
-       WHERE token_hash = $1 AND uses_remaining > 0`,
-      [tokenHash],
-    );
+
+    try {
+      await withTransaction(async (client) => {
+        await client.query(
+          `INSERT INTO connections (user_a, user_b, status) VALUES ($1, $2, 'pending')
+           ON CONFLICT (user_a, user_b) DO NOTHING`,
+          [userA, userB],
+        );
+        const { rowCount } = await client.query(
+          `UPDATE invite_tokens SET uses_remaining = uses_remaining - 1
+           WHERE token_hash = $1 AND uses_remaining > 0`,
+          [tokenHash],
+        );
+        if (!rowCount) throw new Error("invite_exhausted");
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message === "invite_exhausted") {
+        return reply.code(404).send({ error: "not_found" });
+      }
+      throw err;
+    }
 
     return buildMeState(request.user!);
   });
@@ -615,10 +655,11 @@ export async function registerRoutes(app: FastifyInstance) {
     if (typeof happened !== "boolean") {
       return reply.code(400).send({ error: "invalid_request" });
     }
-    await query(
+    const { rowCount } = await query(
       `UPDATE hangout_checks SET response = $1 WHERE overlap_id = $2 AND user_id = $3`,
       [happened ? "yes" : "no", overlapId, request.user!.id],
     );
+    if (!rowCount) return reply.code(404).send({ error: "not_found" });
     return { ok: true };
   });
 }

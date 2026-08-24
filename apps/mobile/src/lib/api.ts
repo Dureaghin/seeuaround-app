@@ -1,5 +1,5 @@
-import type { InviteInfo, InviteStatus } from "@seeuaround/shared";
-import { getToken } from "./auth-store";
+import type { InviteInfo, InviteStatus, MeState } from "@seeuaround/shared";
+import { getToken, clearToken } from "./auth-store";
 import { API_URL } from "./config";
 
 export class ApiError extends Error {
@@ -31,11 +31,19 @@ async function request<T>(
 
   const res = await fetch(`${API_URL}${path}`, { ...options, method, body, headers });
   if (!res.ok) {
-    const body = await res.text();
-    throw new ApiError(res.status, body || res.statusText);
+    const errBody = await res.text();
+    if (res.status === 401 && auth) {
+      await clearToken();
+      throw new ApiError(401, "session_expired");
+    }
+    throw new ApiError(res.status, errBody || res.statusText);
   }
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new ApiError(500, "invalid_json");
+  }
 }
 
 export const api = {
@@ -59,7 +67,11 @@ export const api = {
       body: JSON.stringify({ confirmed: true }),
     }),
 
-  pause: () => request<MeState>("/me/pause", { method: "POST" }),
+  pause: (until: "week" | "month" | "forever") =>
+    request<MeState>("/me/pause", {
+      method: "POST",
+      body: JSON.stringify({ until }),
+    }),
 
   unpause: () => request<MeState>("/me/unpause", { method: "POST" }),
 
@@ -136,7 +148,7 @@ export const api = {
     request<{ firstName: string }>(`/invites/${token}/preview`, {}, false),
 
   connectInvite: (token: string) =>
-    request<import("@seeuaround/shared").MeState>(`/invites/${token}/connect`, {
+    request<MeState>(`/invites/${token}/connect`, {
       method: "POST",
     }),
 
@@ -168,3 +180,5 @@ export const api = {
       body: JSON.stringify({ code }),
     }),
 };
+
+export type { MeState };

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { ActivityIndicator, Platform, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useApp } from "../src/context/AppContext";
@@ -10,7 +10,8 @@ import * as Notifications from "expo-notifications";
 
 export default function Index() {
   const router = useRouter();
-  const { me, loading, refresh } = useApp();
+  const { me, refresh } = useApp();
+  const booted = useRef(false);
 
   useEffect(() => {
     if (Platform.OS === "web") return;
@@ -19,9 +20,12 @@ export default function Index() {
   }, [router]);
 
   useEffect(() => {
+    if (booted.current) return;
+
     (async () => {
       const token = await getToken();
       if (!token) {
+        booted.current = true;
         router.replace("/(auth)/email");
         return;
       }
@@ -33,6 +37,7 @@ export default function Index() {
             last.notification.request.content.data as Record<string, unknown>,
           );
           if (path) {
+            booted.current = true;
             router.replace(path as never);
             await registerForPush();
             return;
@@ -42,16 +47,18 @@ export default function Index() {
 
       const state = me ?? (await refresh());
       if (!state) {
+        booted.current = true;
         router.replace("/(auth)/email");
         return;
       }
 
+      booted.current = true;
       if (Platform.OS !== "web") {
         await registerForPush();
       }
       router.replace(routeToPath(state) as never);
     })();
-  }, [loading, me, refresh, router]);
+  }, [me, refresh, router]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.night, justifyContent: "center", alignItems: "center" }}>

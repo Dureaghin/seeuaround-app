@@ -58,10 +58,9 @@ export default function CodeScreen() {
   const [resendSec, setResendSec] = useState(42);
 
   useEffect(() => {
-    if (resendSec <= 0) return;
-    const t = setInterval(() => setResendSec((s) => Math.max(0, s - 1)), 1000);
+    const t = setInterval(() => setResendSec((s) => (s <= 0 ? 0 : s - 1)), 1000);
     return () => clearInterval(t);
-  }, [resendSec]);
+  }, []);
 
   async function onVerify() {
     blurActiveElement();

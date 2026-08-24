@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useMemo } from "react";
 import type { MeState } from "@seeuaround/shared";
 import { api } from "../lib/api";
 import { getToken } from "../lib/auth-store";
@@ -39,11 +39,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     refresh();
   }, [refresh]);
 
-  return (
-    <AppContext.Provider value={{ me, loading, refresh, setMe }}>
-      {children}
-    </AppContext.Provider>
+  const value = useMemo(
+    () => ({ me, loading, refresh, setMe }),
+    [me, loading, refresh],
   );
+
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
 
 export function useApp() {

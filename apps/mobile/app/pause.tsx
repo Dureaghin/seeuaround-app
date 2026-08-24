@@ -32,14 +32,15 @@ const PAUSE_OPTIONS = [
 
 export default function PauseScreen() {
   const router = useRouter();
-  const { me, refresh } = useApp();
+  const { me, setMe } = useApp();
   const [selected, setSelected] = useState<(typeof PAUSE_OPTIONS)[number]["id"]>("week");
   const [loading, setLoading] = useState(false);
 
   async function sitOut() {
     setLoading(true);
     try {
-      const state = await api.pause();
+      const state = await api.pause(selected);
+      setMe(state);
       router.replace(routeToPath(state) as never);
     } finally {
       setLoading(false);
@@ -50,6 +51,7 @@ export default function PauseScreen() {
     setLoading(true);
     try {
       const state = await api.unpause();
+      setMe(state);
       router.replace(routeToPath(state) as never);
     } finally {
       setLoading(false);

@@ -6,9 +6,12 @@ CREATE TABLE IF NOT EXISTS users (
   short_code TEXT NOT NULL UNIQUE,
   timezone TEXT NOT NULL DEFAULT 'America/New_York',
   paused BOOLEAN NOT NULL DEFAULT FALSE,
+  pause_until TIMESTAMPTZ,
   age_verified_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pause_until TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

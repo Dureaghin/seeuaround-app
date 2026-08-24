@@ -109,6 +109,11 @@ export const AgeConfirmSchema = z.object({
 });
 export type AgeConfirmInput = z.infer<typeof AgeConfirmSchema>;
 
+export const PauseSchema = z.object({
+  until: z.enum(["week", "month", "forever"]),
+});
+export type PauseInput = z.infer<typeof PauseSchema>;
+
 export const DeleteAccountSchema = z.object({
   code: z.string().regex(/^\d{6}$/),
 });

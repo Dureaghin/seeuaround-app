@@ -15,18 +15,19 @@ export async function deliverPendingNotifications() {
     platform: string;
     timezone: string;
   }>(
-    `SELECT n.id, n.user_id, n.title, n.body, n.data, pt.token, pt.platform, u.timezone
+    `SELECT DISTINCT ON (n.id)
+            n.id, n.user_id, n.title, n.body, n.data, pt.token, pt.platform, u.timezone
      FROM notifications n
      JOIN users u ON u.id = n.user_id
      JOIN push_tokens pt ON pt.user_id = n.user_id
      WHERE n.sent_at IS NULL
        AND (n.scheduled_for IS NULL OR n.scheduled_for <= now())
-     ORDER BY n.created_at ASC
+     ORDER BY n.id, pt.created_at DESC NULLS LAST, n.created_at ASC
      LIMIT 100`,
   );
 
   const messages: ExpoPushMessage[] = [];
-  const meta: { notifId: string; token: string }[] = [];
+  const meta: { notifId: string; ticketId?: string }[] = [];
 
   for (const row of rows) {
     if (!Expo.isExpoPushToken(row.token)) continue;
@@ -42,26 +43,40 @@ export async function deliverPendingNotifications() {
         notificationId: row.id,
       },
     });
-    meta.push({ notifId: row.id, token: row.token });
+    meta.push({ notifId: row.id });
   }
 
   if (messages.length === 0) return;
 
   const chunks = expo.chunkPushNotifications(messages);
   let i = 0;
+  const sentIds: { notifId: string; ticketId: string }[] = [];
+
   for (const chunk of chunks) {
     const tickets = await expo.sendPushNotificationsAsync(chunk);
     for (const ticket of tickets) {
       const m = meta[i];
       if (ticket.status === "ok" && m) {
-        await query(
-          `UPDATE notifications SET sent_at = now(), ticket_id = $1 WHERE id = $2`,
-          [ticket.id, m.notifId],
-        );
+        sentIds.push({ notifId: m.notifId, ticketId: ticket.id });
       }
       i++;
     }
   }
+
+  if (sentIds.length === 0) return;
+
+  const ids = sentIds.map((s) => s.notifId);
+  const ticketIds = sentIds.map((s) => s.ticketId);
+  await query(
+    `UPDATE notifications AS n
+     SET sent_at = now(),
+         ticket_id = v.ticket_id
+     FROM (
+       SELECT UNNEST($1::uuid[]) AS id, UNNEST($2::text[]) AS ticket_id
+     ) AS v
+     WHERE n.id = v.id`,
+    [ids, ticketIds],
+  );
 }
 
 function isInDeliveryWindow(timezone: string): boolean {
