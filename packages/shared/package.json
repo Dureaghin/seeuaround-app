@@ -5,16 +5,23 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "react-native": "./src/index.ts",
   "exports": {
     ".": {
+      "react-native": "./src/index.ts",
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.2"
   }
 }
