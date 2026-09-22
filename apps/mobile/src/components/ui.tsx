@@ -302,19 +302,6 @@ export function OptIn({
   );
 }
 
-export function DevCheck() {
-  return (
-    <View style={styles.devcheck}>
-      <Text style={styles.devcheckH}>Device age check</Text>
-      <View style={styles.devcheckRow}>
-        <Text style={styles.devcheckK}>iOS Declared Age Range</Text>
-        <Text style={styles.devcheckV}>18+ ✓</Text>
-      </View>
-      <Text style={styles.devcheckNote}>Answered on your phone. Nothing was sent anywhere.</Text>
-    </View>
-  );
-}
-
 export function Choice({
   title,
   description,
@@ -478,14 +465,14 @@ export function PersonRow({
   nudge,
   nudged,
   onNudge,
-  onRemove,
+  onBlock,
 }: {
   name: string;
   free?: boolean;
   nudge?: boolean;
   nudged?: boolean;
   onNudge?: () => void;
-  onRemove?: () => void;
+  onBlock?: () => void;
 }) {
   return (
     <View style={styles.person}>
@@ -493,9 +480,14 @@ export function PersonRow({
       <Text style={[styles.personName, free ? styles.personNameFree : styles.personNameDim]}>
         {name}
       </Text>
-      {onRemove ? (
-        <Pressable onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${name}`}>
-          <Text style={styles.removeText}>Remove</Text>
+      {onBlock ? (
+        <Pressable
+          onPress={onBlock}
+          hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
+          accessibilityRole="button"
+          accessibilityLabel={`Block ${name}`}
+        >
+          <Text style={styles.removeText}>Block</Text>
         </Pressable>
       ) : null}
       {nudge ? (

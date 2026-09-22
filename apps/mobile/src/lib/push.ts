@@ -3,6 +3,7 @@ import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import { api } from "./api";
+import { pathFromNotification } from "./resolveRoute";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -49,12 +50,9 @@ export function setupPushListeners(
   });
 
   const response = Notifications.addNotificationResponseReceivedListener((r) => {
-    const data = r.notification.request.content.data ?? {};
-    if (data.overlapId) onNavigate(`/overlap/${data.overlapId}`);
-    else if (data.threadId) onNavigate(`/thread/${data.threadId}`);
-    else if (data.route === "accept" && data.connectionId) {
-      onNavigate(`/accept/${data.connectionId}`);
-    } else if (data.route === "sunday" || data.route === "nudge") onNavigate("/sunday");
+    const data = (r.notification.request.content.data ?? {}) as Record<string, unknown>;
+    const path = pathFromNotification(data);
+    if (path) onNavigate(path);
   });
 
   return () => {

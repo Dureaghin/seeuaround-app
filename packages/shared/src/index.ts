@@ -124,6 +124,7 @@ export type RegisterPushInput = z.infer<typeof RegisterPushSchema>;
 
 export const AgeConfirmSchema = z.object({
   confirmed: z.literal(true),
+  source: z.enum(["apple", "google", "attested"]).optional(),
 });
 export type AgeConfirmInput = z.infer<typeof AgeConfirmSchema>;
 

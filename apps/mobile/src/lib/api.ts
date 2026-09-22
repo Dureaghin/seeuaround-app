@@ -61,10 +61,10 @@ export const api = {
 
   getMeState: () => request<MeState>("/me/state"),
 
-  confirmAge: () =>
+  confirmAge: (source?: "apple" | "google" | "attested") =>
     request<MeState>("/me/age", {
       method: "POST",
-      body: JSON.stringify({ confirmed: true }),
+      body: JSON.stringify({ confirmed: true, source }),
     }),
 
   setName: (firstName: string) =>

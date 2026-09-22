@@ -7,7 +7,12 @@ import { pool } from "./db.js";
 import { migrate } from "./migrate.js";
 import { registerRoutes } from "./routes/index.js";
 import { runMatchingSweep } from "./matching.js";
-import { deliverPendingNotifications, purgeExpiredThreads, queueSundayPrompts } from "./push.js";
+import {
+  deliverPendingNotifications,
+  purgeExpiredThreads,
+  queueHangoutChecks,
+  queueSundayPrompts,
+} from "./push.js";
 
 async function main() {
   if (process.env.RUN_MIGRATIONS === "true") {
@@ -74,17 +79,26 @@ async function main() {
   if (process.env.DATABASE_URL) {
     boss = new PgBoss(process.env.DATABASE_URL);
     await boss.start();
-    for (const queue of ["deliver-notifications", "sunday-prompt", "purge-threads", "match-overlaps"]) {
+    for (const queue of [
+      "deliver-notifications",
+      "sunday-prompt",
+      "purge-threads",
+      "match-overlaps",
+      "hangout-checks",
+    ]) {
       await boss.createQueue(queue);
     }
     await boss.schedule("deliver-notifications", "*/5 * * * *", {}, { tz: "UTC" });
     await boss.schedule("sunday-prompt", "*/15 * * * *", {}, { tz: "UTC" });
-    await boss.schedule("purge-threads", "20 * * * *", {}, { tz: "UTC" });
+    await boss.schedule("purge-threads", "*/15 * * * *", {}, { tz: "UTC" });
     await boss.schedule("match-overlaps", "*/15 * * * *", {}, { tz: "UTC" });
+    await boss.schedule("hangout-checks", "*/15 * * * *", {}, { tz: "UTC" });
     await boss.work("deliver-notifications", deliverPendingNotifications);
     await boss.work("sunday-prompt", queueSundayPrompts);
     await boss.work("purge-threads", purgeExpiredThreads);
     await boss.work("match-overlaps", runMatchingSweep);
+    await boss.work("hangout-checks", queueHangoutChecks);
+    await purgeExpiredThreads();
   }
 
   const close = async () => {

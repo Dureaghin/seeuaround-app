@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Text, View } from "react-native";
+import { Alert, Platform, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SITE } from "@seeuaround/shared";
 import { api } from "../../src/lib/api";
@@ -9,7 +9,6 @@ import { TabEyebrow } from "../../src/components/AccountSheet";
 import {
   CodeCard,
   GroupHeader,
-  HangoutBanner,
   Linkish,
   PersonRow,
   Screen,
@@ -43,22 +42,25 @@ export default function PeopleScreen() {
     await copy(shortCode);
   }
 
+  function blockPerson(id: string, name: string) {
+    const run = async () => {
+      await api.blockConnection(id);
+      setConnections((prev) => prev.filter((c) => c.id !== id));
+      await refresh();
+    };
+    const message = `${name} won't be told. They drop out of nights that haven't started.`;
+    if (Platform.OS === "web") {
+      if (window.confirm(`Block ${name}? ${message}`)) void run();
+      return;
+    }
+    Alert.alert(`Block ${name}?`, message, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Block", style: "destructive", onPress: () => void run() },
+    ]);
+  }
+
   return (
     <Screen>
-      {me?.pendingHangoutCheck ? (
-        <HangoutBanner
-          label={me.pendingHangoutCheck.label}
-          onYes={async () => {
-            await api.hangoutCheck(me.pendingHangoutCheck!.overlapId, true);
-            await refresh();
-          }}
-          onNo={async () => {
-            await api.hangoutCheck(me.pendingHangoutCheck!.overlapId, false);
-            await refresh();
-          }}
-        />
-      ) : null}
-
       <TabEyebrow>Your code</TabEyebrow>
       <CodeCard copied={copied} onCopy={copyCode} qrValue={qrValue}>
         <Text style={uiStyles.codeMono}>{shortCode || "…"}</Text>
@@ -75,7 +77,12 @@ export default function PeopleScreen() {
         <>
           <GroupHeader>Free tonight — {freeTonight.length}</GroupHeader>
           {freeTonight.map((c) => (
-            <PersonRow key={c.id} name={c.firstName || "Someone"} free />
+            <PersonRow
+              key={c.id}
+              name={c.firstName || "Someone"}
+              free
+              onBlock={() => blockPerson(c.id, c.firstName || "Someone")}
+            />
           ))}
         </>
       ) : null}
@@ -84,7 +91,11 @@ export default function PeopleScreen() {
         <>
           <GroupHeader>Not tonight — {notTonight.length}</GroupHeader>
           {notTonight.map((c) => (
-            <PersonRow key={c.id} name={c.firstName || "Someone"} />
+            <PersonRow
+              key={c.id}
+              name={c.firstName || "Someone"}
+              onBlock={() => blockPerson(c.id, c.firstName || "Someone")}
+            />
           ))}
         </>
       ) : accepted.length === 0 ? (

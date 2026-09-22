@@ -34,11 +34,11 @@ export async function buildMeState(user: AuthedUser): Promise<MeState> {
           ORDER BY t.expires_at ASC LIMIT 1) AS thread_id,
        (SELECT hc.overlap_id::text FROM hangout_checks hc
           WHERE hc.user_id = $1 AND hc.response IS NULL
-            AND hc.night_date = (CURRENT_DATE - interval '1 day')::date
+            AND hc.night_date = (timezone(COALESCE(NULLIF($3, ''), 'America/New_York'), now()))::date - 1
           ORDER BY hc.night_date DESC LIMIT 1) AS hangout_overlap_id,
        (SELECT hc.night_date::text FROM hangout_checks hc
           WHERE hc.user_id = $1 AND hc.response IS NULL
-            AND hc.night_date = (CURRENT_DATE - interval '1 day')::date
+            AND hc.night_date = (timezone(COALESCE(NULLIF($3, ''), 'America/New_York'), now()))::date - 1
           ORDER BY hc.night_date DESC LIMIT 1) AS hangout_night,
        (SELECT c.id::text FROM connections c
           WHERE c.status = 'pending' AND (c.user_a = $1 OR c.user_b = $1)
@@ -53,7 +53,7 @@ export async function buildMeState(user: AuthedUser): Promise<MeState> {
               WHERE w.user_id = u.id
                 AND to_char(lower(w.span) AT TIME ZONE 'UTC', 'YYYY-MM-DD') = ANY($2::text[])
             )) AS missing_week`,
-    [user.id, weekDates],
+    [user.id, weekDates, user.timezone || "America/New_York"],
   );
   const state = stateRows[0];
 
@@ -74,14 +74,14 @@ export async function buildMeState(user: AuthedUser): Promise<MeState> {
   } else if (pendingConnectionId) {
     route = "accept";
     routeParams.id = pendingConnectionId;
-  } else if (connectionCount < 5) {
-    route = "invite";
   } else if (unansweredOverlapId) {
     route = "overlap";
     routeParams.id = unansweredOverlapId;
   } else if (activeThreadId) {
     route = "thread";
     routeParams.id = activeThreadId;
+  } else if (connectionCount < 5) {
+    route = "invite";
   } else if (!weekSet) {
     route = "sunday";
   } else if (user.paused) {
@@ -90,10 +90,16 @@ export async function buildMeState(user: AuthedUser): Promise<MeState> {
     route = "empty";
   }
 
+  const night = (state?.hangout_night ?? "").slice(0, 10);
+  const [year, month, day] = night.split("-").map(Number);
+  const weekday =
+    year && month && day
+      ? new Date(year, month - 1, day).toLocaleDateString("en-US", { weekday: "long" })
+      : "that night";
   const pendingHangoutCheck = state?.hangout_overlap_id
     ? {
         overlapId: state.hangout_overlap_id,
-        label: `Did ${new Date(state.hangout_night ?? "").toLocaleDateString("en-US", { weekday: "long" })} happen?`,
+        label: `Did ${weekday} happen?`,
       }
     : null;
 

@@ -621,6 +621,45 @@ export async function registerRoutes(app: FastifyInstance) {
       [id, request.user!.id],
     );
     if (!rowCount) return reply.code(404).send({ error: "not_found" });
+
+    const { rows: peers } = await query<{ peer_id: string }>(
+      `SELECT CASE WHEN c.user_a = $2 THEN c.user_b ELSE c.user_a END AS peer_id
+       FROM connections c
+       WHERE c.id = $1 AND (c.user_a = $2 OR c.user_b = $2)`,
+      [id, request.user!.id],
+    );
+    const peerId = peers[0]?.peer_id;
+    if (peerId) {
+      const { rows: shared } = await query<{ id: string }>(
+        `SELECT o.id
+         FROM "overlaps" o
+         WHERE o.expires_at > now()
+           AND NOT EXISTS (SELECT 1 FROM threads t WHERE t.overlap_id = o.id)
+           AND EXISTS (
+             SELECT 1 FROM overlap_members mine
+             WHERE mine.overlap_id = o.id AND mine.user_id = $1
+           )
+           AND EXISTS (
+             SELECT 1 FROM overlap_members theirs
+             WHERE theirs.overlap_id = o.id AND theirs.user_id = $2
+           )`,
+        [request.user!.id, peerId],
+      );
+      if (shared.length > 0) {
+        const overlapIds = shared.map((row) => row.id);
+        await query(
+          `DELETE FROM overlap_members
+           WHERE user_id = $1 AND overlap_id = ANY($2::uuid[])`,
+          [request.user!.id, overlapIds],
+        );
+        await query(
+          `DELETE FROM "overlaps" o
+           WHERE o.id = ANY($1::uuid[])
+             AND (SELECT COUNT(*) FROM overlap_members om WHERE om.overlap_id = o.id) < 2`,
+          [overlapIds],
+        );
+      }
+    }
     return { ok: true };
   });
 
@@ -803,6 +842,12 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get("/threads/:id", { preHandler: authHook }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    const expired = await query(
+      `DELETE FROM threads WHERE id = $1 AND expires_at <= now()`,
+      [id],
+    );
+    if (expired.rowCount) return reply.code(404).send({ error: "not_found" });
+
     const { rows: threadRows } = await query<{
       expires_at: string;
       area: string;

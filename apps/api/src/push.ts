@@ -5,19 +5,75 @@ import { isLocalSundaySixPm } from "./pause-until.js";
 
 const expo = new Expo({ accessToken: config.expoAccessToken });
 
+type DueNotification = {
+  id: string;
+  user_id: string;
+  kind: string;
+  title: string;
+  body: string;
+  data: Record<string, string>;
+  token: string;
+  platform: string;
+  timezone: string;
+};
+
+function singlePush(row: DueNotification): { message: ExpoPushMessage; notifIds: string[] } {
+  return {
+    message: {
+      to: row.token,
+      sound: "default",
+      title: row.title,
+      body: row.body,
+      data: { ...row.data, notificationId: row.id },
+    },
+    notifIds: [row.id],
+  };
+}
+
+/** Several overlap alerts due at once become one morning push. */
+export function collapseOverlapPushes(
+  rows: DueNotification[],
+): { message: ExpoPushMessage; notifIds: string[] }[] {
+  const byUser = new Map<string, DueNotification[]>();
+  for (const row of rows) {
+    const list = byUser.get(row.user_id) ?? [];
+    list.push(row);
+    byUser.set(row.user_id, list);
+  }
+
+  const outbound: { message: ExpoPushMessage; notifIds: string[] }[] = [];
+  for (const list of byUser.values()) {
+    const overlaps = list.filter((row) => row.kind === "overlap");
+    const rest = list.filter((row) => row.kind !== "overlap");
+    if (overlaps.length > 1) {
+      const first = overlaps[0];
+      const nights = [...new Set(overlaps.map((row) => row.title).filter(Boolean))];
+      const when =
+        nights.length >= 2
+          ? `${nights.slice(0, -1).join(", ")} and ${nights[nights.length - 1]}`
+          : "A few nights";
+      outbound.push({
+        message: {
+          to: first.token,
+          sound: "default",
+          title: "This week",
+          body: `${when}. ${overlaps.length} nights line up.`,
+          data: { ...first.data, notificationId: first.id },
+        },
+        notifIds: overlaps.map((row) => row.id),
+      });
+    } else {
+      for (const row of overlaps) outbound.push(singlePush(row));
+    }
+    for (const row of rest) outbound.push(singlePush(row));
+  }
+  return outbound;
+}
+
 export async function deliverPendingNotifications() {
-  const { rows } = await query<{
-    id: string;
-    user_id: string;
-    title: string;
-    body: string;
-    data: Record<string, string>;
-    token: string;
-    platform: string;
-    timezone: string;
-  }>(
+  const { rows } = await query<DueNotification>(
     `SELECT DISTINCT ON (n.id)
-            n.id, n.user_id, n.title, n.body, n.data, pt.token, pt.platform, u.timezone
+            n.id, n.user_id, n.kind, n.title, n.body, n.data, pt.token, pt.platform, u.timezone
      FROM notifications n
      JOIN users u ON u.id = n.user_id
      JOIN push_tokens pt ON pt.user_id = n.user_id
@@ -27,10 +83,9 @@ export async function deliverPendingNotifications() {
      LIMIT 100`,
   );
 
-  const messages: ExpoPushMessage[] = [];
-  const meta: { notifId: string; ticketId?: string }[] = [];
   const deferred: { id: string; at: string }[] = [];
   const badTokens: string[] = [];
+  const ready: DueNotification[] = [];
 
   for (const row of rows) {
     if (!Expo.isExpoPushToken(row.token)) {
@@ -41,19 +96,12 @@ export async function deliverPendingNotifications() {
       deferred.push({ id: row.id, at: nextDeliveryAt(row.timezone).toISOString() });
       continue;
     }
-
-    messages.push({
-      to: row.token,
-      sound: "default",
-      title: row.title,
-      body: row.body,
-      data: {
-        ...row.data,
-        notificationId: row.id,
-      },
-    });
-    meta.push({ notifId: row.id });
+    ready.push(row);
   }
+
+  const outbound = collapseOverlapPushes(ready);
+  const messages = outbound.map((item) => item.message);
+  const meta = outbound.map((item) => item.notifIds);
 
   if (badTokens.length > 0) {
     await query(`DELETE FROM push_tokens WHERE token = ANY($1::text[])`, [badTokens]);
@@ -79,9 +127,11 @@ export async function deliverPendingNotifications() {
   for (const chunk of chunks) {
     const tickets = await expo.sendPushNotificationsAsync(chunk);
     for (const ticket of tickets) {
-      const m = meta[i];
-      if (ticket.status === "ok" && m) {
-        sentIds.push({ notifId: m.notifId, ticketId: ticket.id });
+      const idsForMessage = meta[i] ?? [];
+      if (ticket.status === "ok") {
+        for (const notifId of idsForMessage) {
+          sentIds.push({ notifId, ticketId: ticket.id });
+        }
       }
       i++;
     }
@@ -172,6 +222,35 @@ export async function queueSundayPrompts() {
 
 export async function purgeExpiredThreads() {
   await query(`DELETE FROM threads WHERE expires_at <= now()`);
+}
+
+/** The morning after a night people said yes to: one question, then it is gone. */
+export async function queueHangoutChecks() {
+  const { rows } = await query<{ user_id: string; night_date: string }>(
+    `INSERT INTO hangout_checks (overlap_id, user_id, night_date)
+     SELECT om.overlap_id, om.user_id, o.night_date
+     FROM overlap_members om
+     JOIN "overlaps" o ON o.id = om.overlap_id
+     JOIN users u ON u.id = om.user_id
+     WHERE om.response = 'in'
+       AND o.night_date = (timezone(COALESCE(NULLIF(u.timezone, ''), 'America/New_York'), now()))::date - 1
+     ON CONFLICT (overlap_id, user_id) DO NOTHING
+     RETURNING user_id, night_date::text`,
+  );
+
+  for (const row of rows) {
+    const [year, month, day] = row.night_date.slice(0, 10).split("-").map(Number);
+    const weekday = new Date(year, month - 1, day).toLocaleDateString("en-US", {
+      weekday: "long",
+    });
+    await queueNotification({
+      userId: row.user_id,
+      kind: "hangout",
+      title: weekday,
+      body: `Did ${weekday} happen?`,
+      data: { route: "people" },
+    });
+  }
 }
 
 export { isInDeliveryWindow };

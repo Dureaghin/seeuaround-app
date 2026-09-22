@@ -29,11 +29,13 @@ export function routeToPath(state: MeState): string {
 }
 
 export function pathFromNotification(data: Record<string, unknown>): string | null {
-  if (data.overlapId) return `/overlap/${data.overlapId}`;
-  if (data.threadId) return `/thread/${data.threadId}`;
-  if (data.route === "accept" && data.connectionId) return `/accept/${data.connectionId}`;
+  if (typeof data.overlapId === "string") return `/overlap/${data.overlapId}`;
+  if (typeof data.threadId === "string") return `/thread/${data.threadId}`;
+  if (data.route === "accept" && typeof data.connectionId === "string") {
+    return `/accept/${data.connectionId}`;
+  }
   if (data.route === "sunday" || data.route === "nudge") return "/sunday";
+  if (data.route === "people" || data.route === "hangout") return "/people";
   if (data.route === "lock") return "/lock";
-  if (data.route === "overlap" && data.overlapId) return `/overlap/${data.overlapId}`;
   return null;
 }

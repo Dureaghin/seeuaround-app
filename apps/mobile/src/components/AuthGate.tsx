@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { useGlobalSearchParams, useRouter, useSegments } from "expo-router";
 import { useApp } from "../context/AppContext";
+import { api } from "../lib/api";
 import { isPublicRoute } from "../lib/auth-gate";
 import { getToken } from "../lib/auth-store";
+import { HangoutBanner } from "./ui";
 import {
   normalizeFriendCode,
   resolveFriendCodeParam,
@@ -18,7 +20,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
   const params = useGlobalSearchParams<{ code?: string | string[] }>();
-  const { loading, me } = useApp();
+  const { loading, me, refresh } = useApp();
   const [allowed, setAllowed] = useState(false);
 
   const publicRoute = isPublicRoute(segments as string[]);
@@ -82,5 +84,24 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  const hangout = me?.pendingHangoutCheck;
+
+  return (
+    <View style={{ flex: 1 }}>
+      {hangout ? (
+        <HangoutBanner
+          label={hangout.label}
+          onYes={async () => {
+            await api.hangoutCheck(hangout.overlapId, true);
+            await refresh();
+          }}
+          onNo={async () => {
+            await api.hangoutCheck(hangout.overlapId, false);
+            await refresh();
+          }}
+        />
+      ) : null}
+      {children}
+    </View>
+  );
 }
