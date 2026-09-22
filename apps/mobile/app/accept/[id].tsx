@@ -82,7 +82,7 @@ export default function AcceptScreen() {
         items={[
           {
             ok: true,
-            text: `${peer?.firstName ?? "They"} see which nights you're free. Nothing else.`,
+            text: `${peer?.firstName ?? "They"} ${peer?.firstName ? "sees" : "see"} which nights you're free. Nothing else.`,
           },
           {
             ok: false,

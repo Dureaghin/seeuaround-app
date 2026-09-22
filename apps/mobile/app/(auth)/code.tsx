@@ -15,6 +15,7 @@ import {
   rememberPendingFriendCode,
   resolveFriendCodeParam,
 } from "../../src/lib/friend-code";
+import { applyPendingInvite } from "../../src/lib/invite-pending";
 import {
   Actions,
   Button,
@@ -83,7 +84,15 @@ export default function CodeScreen() {
       } catch {
         // Signup continues even if the friend-code request fails transiently.
       }
-      const state = await refresh();
+      let state = await refresh();
+      if (state && state.route !== "age" && state.route !== "name") {
+        try {
+          await applyPendingInvite();
+          state = (await refresh()) ?? state;
+        } catch {
+          // Sign-in still succeeds if the invite link fails transiently.
+        }
+      }
       router.replace(state ? (routeToPath(state) as never) : "/age");
     } catch {
       setError("That code isn't right. Try again.");

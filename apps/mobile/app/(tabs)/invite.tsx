@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Alert, Platform, Pressable, Text } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { INVITE_MAX_USES, INVITE_TTL_DAYS } from "@seeuaround/shared";
@@ -12,11 +12,11 @@ import {
   setStoredInviteUrl,
 } from "../../src/lib/invite-store";
 import { useApp } from "../../src/context/AppContext";
+import { TabEyebrow } from "../../src/components/AccountSheet";
 import {
   Actions,
   Button,
   CodeCard,
-  Eyebrow,
   Headline,
   LinkRow,
   Panel,
@@ -60,24 +60,31 @@ export default function InviteScreen() {
     [],
   );
 
+  const creatingInvite = useRef(false);
+
   const loadInvite = useCallback(async () => {
+    const ownerId = me?.user?.id;
     try {
       const active = await api.getActiveInvite();
-      const storedUrl = await getStoredInviteUrl();
-      if (storedUrl) {
-        setInviteUrl(storedUrl);
-        applyMeta(active);
-        return;
-      }
+      const storedUrl = ownerId ? await getStoredInviteUrl(ownerId) : null;
+      setInviteUrl(storedUrl ?? "");
+      applyMeta(active);
+      return;
     } catch {
-      // No active invite — create a fresh link below.
+      // No live link yet — make the first one below.
     }
 
-    const created = await api.createInvite();
-    await setStoredInviteUrl(created.url);
-    setInviteUrl(created.url);
-    applyMeta(created);
-  }, [applyMeta]);
+    if (!ownerId || creatingInvite.current) return;
+    creatingInvite.current = true;
+    try {
+      const created = await api.createInvite();
+      await setStoredInviteUrl(created.url, ownerId);
+      setInviteUrl(created.url);
+      applyMeta(created);
+    } finally {
+      creatingInvite.current = false;
+    }
+  }, [applyMeta, me?.user?.id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -110,7 +117,7 @@ export default function InviteScreen() {
     setCreating(true);
     try {
       const created = await api.createInvite();
-      await setStoredInviteUrl(created.url);
+      if (me?.user?.id) await setStoredInviteUrl(created.url, me.user.id);
       setInviteUrl(created.url);
       applyMeta(created);
     } catch {
@@ -184,7 +191,7 @@ export default function InviteScreen() {
 
   return (
     <Screen>
-      <Eyebrow>Getting started</Eyebrow>
+      <TabEyebrow>Getting started</TabEyebrow>
       <Headline>Add five people.</Headline>
       <Sub>Nothing happens until your people are here. Five is enough.</Sub>
 

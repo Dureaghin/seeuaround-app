@@ -4,11 +4,11 @@ import { useRouter } from "expo-router";
 import { routeToPath } from "../../src/lib/resolveRoute";
 import { api } from "../../src/lib/api";
 import { useApp } from "../../src/context/AppContext";
+import { TabEyebrow } from "../../src/components/AccountSheet";
 import {
   ErrText,
   Actions,
   Button,
-  Eyebrow,
   Headline,
   NightStrip,
   QuietLink,
@@ -55,7 +55,7 @@ export default function SundayScreen() {
 
   return (
     <Screen>
-      <Eyebrow>{eyebrow}</Eyebrow>
+      <TabEyebrow>{eyebrow}</TabEyebrow>
       <Headline>Which nights are you free?</Headline>
       <Sub>Tap the nights you're up for. Clears Monday morning.</Sub>
 

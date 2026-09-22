@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { routeToPath } from "../src/lib/resolveRoute";
 import { api } from "../src/lib/api";
+import { applyPendingInvite } from "../src/lib/invite-pending";
 import { useApp } from "../src/context/AppContext";
 import { useRouter } from "expo-router";
 import {
@@ -19,7 +20,7 @@ const NAME_RE = /^[\p{L}][\p{L}\s'.-]{0,23}$/u;
 
 export default function NameScreen() {
   const router = useRouter();
-  const { setMe } = useApp();
+  const { setMe, refresh } = useApp();
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -33,9 +34,15 @@ export default function NameScreen() {
     setLoading(true);
     setError("");
     try {
-      const state = await api.setName(firstName);
-      setMe(state);
-      router.replace(routeToPath(state) as never);
+      await api.setName(firstName);
+      try {
+        await applyPendingInvite();
+      } catch {
+        // The name is saved even if the invite link fails transiently.
+      }
+      const state = await refresh();
+      if (state) setMe(state);
+      router.replace(state ? (routeToPath(state) as never) : "/invite");
     } catch {
       setError("Couldn't save that. Try again.");
     } finally {

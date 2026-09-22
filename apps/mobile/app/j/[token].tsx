@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { routeToPath } from "../../src/lib/resolveRoute";
 import { api } from "../../src/lib/api";
 import { getToken } from "../../src/lib/auth-store";
+import { rememberPendingInvite } from "../../src/lib/invite-pending";
 import { useApp } from "../../src/context/AppContext";
 import {
   Actions,
@@ -34,6 +35,7 @@ export default function InviteLinkScreen() {
     if (!token) return;
     const authed = await getToken();
     if (!authed) {
+      rememberPendingInvite(token);
       router.push("/(auth)/email");
       return;
     }

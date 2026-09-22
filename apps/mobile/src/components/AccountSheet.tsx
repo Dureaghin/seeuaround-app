@@ -10,14 +10,45 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Circle, Path } from "react-native-svg";
 import { useRouter } from "expo-router";
 import { api } from "../lib/api";
 import { signOut } from "../lib/auth-session";
+import { clearStoredInviteUrl } from "../lib/invite-store";
 import { useApp } from "../context/AppContext";
 import { colors, fonts, radius, spacing } from "../lib/theme";
-import { Actions, Button, Headline, OtpInput, Sub } from "./ui";
+import { Actions, Button, Eyebrow, Headline, OtpInput, Sub } from "./ui";
 
 type Step = "main" | "delete";
+
+export function TabEyebrow({ children, lamp }: { children: React.ReactNode; lamp?: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <View style={styles.tabEyebrow}>
+        <Eyebrow lamp={lamp}>{children}</Eyebrow>
+        <Pressable
+          onPress={() => setOpen(true)}
+          style={styles.accountHit}
+          accessibilityRole="button"
+          accessibilityLabel="Account"
+        >
+          <Svg width={18} height={18} viewBox="0 0 24 24">
+            <Circle cx={12} cy={8} r={3.2} fill="none" stroke={colors.dim} strokeWidth={1.6} />
+            <Path
+              d="M5.2 19.2c.9-3.2 3.5-4.8 6.8-4.8s5.9 1.6 6.8 4.8"
+              fill="none"
+              stroke={colors.dim}
+              strokeWidth={1.6}
+              strokeLinecap="round"
+            />
+          </Svg>
+        </Pressable>
+      </View>
+      <AccountSheet visible={open} onClose={() => setOpen(false)} />
+    </>
+  );
+}
 
 export function AccountSheet({
   visible,
@@ -101,6 +132,7 @@ export function AccountSheet({
     setCodeError(false);
     try {
       await api.deleteAccount(code);
+      await clearStoredInviteUrl();
       await signOut();
       setMe(null);
       onClose();
@@ -265,5 +297,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.danger,
     marginTop: 14,
+  },
+  tabEyebrow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 44,
+  },
+  accountHit: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "flex-end",
+    justifyContent: "center",
   },
 });
