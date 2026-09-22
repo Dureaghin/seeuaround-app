@@ -164,12 +164,12 @@ export default function InviteScreen() {
     );
   }
 
-  const primaryLabel = hasPeople
-    ? "See who's here"
-    : !hasLink
-      ? creating
-        ? "Making link…"
-        : "Make a new link"
+  const primaryLabel = !hasLink
+    ? creating
+      ? "Making link…"
+      : "Make a new link"
+    : hasPeople
+      ? "See who's here"
       : shareAvailable
         ? "Share the link"
         : copied
@@ -177,13 +177,13 @@ export default function InviteScreen() {
           : "Copy the link";
 
   async function onPrimary() {
+    if (!hasLink) {
+      await makeNewLink();
+      return;
+    }
     if (hasPeople) {
       await refresh();
       router.push("/people");
-      return;
-    }
-    if (!hasLink) {
-      await makeNewLink();
       return;
     }
     await shareOrCopy();
@@ -248,6 +248,15 @@ export default function InviteScreen() {
               shareAvailable ? "Share another invite" : copied ? "Link copied" : "Copy the link"
             }
             onPress={shareOrCopy}
+            variant="ghost"
+          />
+        ) : hasPeople && !hasLink ? (
+          <Button
+            label="See who's here"
+            onPress={async () => {
+              await refresh();
+              router.push("/people");
+            }}
             variant="ghost"
           />
         ) : hasLink && !hasPeople ? (

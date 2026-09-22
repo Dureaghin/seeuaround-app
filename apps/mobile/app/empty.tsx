@@ -33,7 +33,7 @@ export default function EmptyScreen() {
 
   return (
     <Screen>
-      <Eyebrow>Wednesday</Eyebrow>
+      <Eyebrow>{new Date().toLocaleDateString("en-US", { weekday: "long" })}</Eyebrow>
       <Headline>Nothing lines up this week.</Headline>
       <Sub>
         {missing.length > 0

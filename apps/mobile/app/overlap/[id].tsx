@@ -18,34 +18,36 @@ import { Text } from "react-native";
 
 const AXIS = ["M", "T", "W", "T", "F", "S", "S"];
 
+function weekdayIndex(iso: string): number {
+  const [year, month, day] = iso.slice(0, 10).split("-").map(Number);
+  if (!year || !month || !day) return -1;
+  return (new Date(year, month - 1, day).getDay() + 6) % 7;
+}
+
 export default function OverlapScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { me, refresh } = useApp();
   const [overlap, setOverlap] = useState<Awaited<ReturnType<typeof api.getOverlap>> | null>(null);
-  const [myWeek, setMyWeek] = useState<{ date: string; free: boolean }[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!id) return;
     api.getOverlap(id).then(setOverlap).catch(() => {});
-    api.getWeek().then((r) => setMyWeek(r.nights)).catch(() => {});
   }, [id]);
 
   const sharedIndex = useMemo(() => {
-    if (!overlap?.nightDate) return 3;
-    const idx = myWeek.findIndex((n) => n.date === overlap.nightDate);
-    return idx >= 0 ? idx : 3;
-  }, [overlap?.nightDate, myWeek]);
+    if (!overlap?.nightDate) return -1;
+    return weekdayIndex(overlap.nightDate);
+  }, [overlap?.nightDate]);
 
   const rows = useMemo(() => {
     if (!overlap) return [];
-    const dateIndex = new Map(myWeek.map((night, index) => [night.date, index]));
     return overlap.members.map((m) => {
       const isYou = m.id === me?.user?.id;
       const freeIndices = (m.freeDates ?? [])
-        .map((date) => dateIndex.get(date.slice(0, 10)))
-        .filter((index): index is number => index !== undefined);
+        .map((date) => weekdayIndex(date))
+        .filter((index) => index >= 0);
       if (sharedIndex >= 0 && !freeIndices.includes(sharedIndex)) freeIndices.push(sharedIndex);
       return {
         label: isYou ? "You" : m.firstName,
@@ -53,7 +55,7 @@ export default function OverlapScreen() {
         freeIndices,
       };
     });
-  }, [overlap, me?.user?.id, myWeek, sharedIndex]);
+  }, [overlap, me?.user?.id, sharedIndex]);
 
   async function respond(response: "in" | "out") {
     if (!id) return;
@@ -67,7 +69,13 @@ export default function OverlapScreen() {
   }
 
   const others = overlap?.members.filter((m) => m.id !== me?.user?.id) ?? [];
-  const names = others.map((m) => m.firstName).join(" and ");
+  const names = others.map((m) => m.firstName).filter((name) => name.trim().length > 0);
+  const who =
+    names.length === 0
+      ? "You"
+      : names.length === 1
+        ? `You and ${names[0]}`
+        : `You, ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
   const headline = overlap?.dateLabel?.replace(/,.*$/, " night") ?? "Overlap night";
 
   return (
@@ -75,7 +83,7 @@ export default function OverlapScreen() {
       <Eyebrow lamp>Overlap</Eyebrow>
       <Headline>{headline}</Headline>
       <Sub>
-        You{names ? `, ${names}` : ""} are all free. Nobody had to ask.
+        {who} are all free. Nobody had to ask.
       </Sub>
 
       {rows.length > 0 ? (

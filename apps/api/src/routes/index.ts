@@ -30,7 +30,9 @@ import {
   safeEqual,
 } from "../crypto.js";
 import { query, withTransaction } from "../db.js";
-import { buildMeState, runMatchingForUser } from "../me-state.js";
+import { buildMeState } from "../me-state.js";
+import { runMatchingForUser } from "../matching.js";
+import { currentWeekDates } from "../week.js";
 import { queueNotification } from "../push.js";
 import { config, getDevAuthCode } from "../config.js";
 import { searchPlaces } from "../places.js";
@@ -427,6 +429,7 @@ export async function registerRoutes(app: FastifyInstance) {
     await query(`UPDATE users SET paused = FALSE, pause_until = NULL WHERE id = $1`, [
       request.user!.id,
     ]);
+    await runMatchingForUser(request.user!.id);
     return buildMeState({ ...request.user!, paused: false });
   });
 
@@ -471,38 +474,28 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get("/windows/week", { preHandler: authHook }, async (request) => {
     const userId = request.user!.id;
+    const dates = currentWeekDates();
+    const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const { rows } = await query<{ date: string }>(
       `SELECT to_char(lower(span) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date
        FROM windows WHERE user_id = $1
-         AND lower(span) >= date_trunc('week', now()) + interval '1 day'
-       ORDER BY lower(span)`,
-      [userId],
+         AND to_char(lower(span) AT TIME ZONE 'UTC', 'YYYY-MM-DD') = ANY($2::text[])
+       ORDER BY 1`,
+      [userId, dates],
     );
-    const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    const start = new Date();
-    const monday = new Date(start);
-    monday.setDate(start.getDate() - ((start.getDay() + 6) % 7));
 
     return {
-      nights: Array.from({ length: 7 }, (_, i) => {
-        const d = new Date(monday);
-        d.setDate(monday.getDate() + i);
-        const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        return { date, label: labels[i], free: rows.some((r) => r.date === date) };
-      }),
+      nights: dates.map((date, index) => ({
+        date,
+        label: labels[index],
+        free: rows.some((row) => row.date === date),
+      })),
     };
   });
 
   app.get("/connections", { preHandler: authHook }, async (request) => {
     const userId = request.user!.id;
-    const weekStart = new Date();
-    const day = weekStart.getDay();
-    const diff = day === 0 ? 0 : 7 - day;
-    weekStart.setDate(weekStart.getDate() + diff);
-    weekStart.setHours(0, 0, 0, 0);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 6);
-    weekEnd.setHours(23, 59, 59, 999);
+    const weekDates = currentWeekDates();
 
     const { rows } = await query<{
       id: string;
@@ -520,13 +513,13 @@ export async function registerRoutes(app: FastifyInstance) {
          EXISTS (
            SELECT 1 FROM windows w
            WHERE w.user_id = u.id
-             AND w.span && tstzrange($2, $3)
+             AND to_char(lower(w.span) AT TIME ZONE 'UTC', 'YYYY-MM-DD') = ANY($2::text[])
          ) AS week_set
        FROM connections c
        JOIN users u ON u.id = CASE WHEN c.user_a = $1 THEN c.user_b ELSE c.user_a END
        WHERE (c.user_a = $1 OR c.user_b = $1) AND c.status IN ('pending', 'accepted')
        ORDER BY u.first_name, c.id`,
-      [userId, weekStart.toISOString(), weekEnd.toISOString()],
+      [userId, weekDates],
     );
 
     return {
@@ -603,6 +596,7 @@ export async function registerRoutes(app: FastifyInstance) {
       [id, request.user!.id],
     );
     if (!rowCount) return reply.code(404).send({ error: "not_found" });
+    await runMatchingForUser(request.user!.id);
     return { ok: true };
   });
 
@@ -642,18 +636,11 @@ export async function registerRoutes(app: FastifyInstance) {
     const peer = rows[0];
     if (!peer) return reply.code(404).send({ error: "not_found" });
 
-    const weekStart = new Date();
-    const day = weekStart.getDay();
-    weekStart.setDate(weekStart.getDate() + (day === 0 ? 0 : 7 - day));
-    weekStart.setHours(0, 0, 0, 0);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 6);
-    weekEnd.setHours(23, 59, 59, 999);
-
     const { rows: weekRows } = await query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM windows
-       WHERE user_id = $1 AND span && tstzrange($2, $3)`,
-      [peer.peer_id, weekStart.toISOString(), weekEnd.toISOString()],
+       WHERE user_id = $1
+         AND to_char(lower(span) AT TIME ZONE 'UTC', 'YYYY-MM-DD') = ANY($2::text[])`,
+      [peer.peer_id, currentWeekDates()],
     );
     if (Number(weekRows[0]?.count ?? 0) > 0) {
       return reply.code(409).send({ error: "already_set" });

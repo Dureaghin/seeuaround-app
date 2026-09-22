@@ -73,3 +73,30 @@ export function isValidTimezone(tz: string): boolean {
     return false;
   }
 }
+
+/** A clock time on a calendar date in an IANA timezone, as a UTC instant. */
+export function zonedDateTime(ymd: string, hour: number, minute: number, timezone: string): Date {
+  const hh = String(hour).padStart(2, "0");
+  const mm = String(minute).padStart(2, "0");
+  const utcGuess = new Date(`${ymd}T${hh}:${mm}:00Z`);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  }).formatToParts(utcGuess);
+  const tzHour = Number(parts.find((part) => part.type === "hour")?.value);
+  const tzMinute = Number(parts.find((part) => part.type === "minute")?.value);
+  const normalizedHour = tzHour === 24 ? 0 : tzHour;
+  const adjustMin = hour * 60 + minute - (normalizedHour * 60 + (Number.isFinite(tzMinute) ? tzMinute : 0));
+  return new Date(utcGuess.getTime() + adjustMin * 60_000);
+}
+
+/** 8:00 the morning after a night, in the person's timezone. The overlap and its thread end then. */
+export function morningAfter(nightYmd: string, timezone: string): Date {
+  const [year, month, day] = nightYmd.split("-").map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + 1));
+  const ymd = next.toISOString().slice(0, 10);
+  const zone = isValidTimezone(timezone) ? timezone : "America/New_York";
+  return zonedDateTime(ymd, 8, 0, zone);
+}

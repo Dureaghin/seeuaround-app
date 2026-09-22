@@ -6,6 +6,7 @@ import { config, getDevAuthCode } from "./config.js";
 import { pool } from "./db.js";
 import { migrate } from "./migrate.js";
 import { registerRoutes } from "./routes/index.js";
+import { runMatchingSweep } from "./matching.js";
 import { deliverPendingNotifications, purgeExpiredThreads, queueSundayPrompts } from "./push.js";
 
 async function main() {
@@ -73,15 +74,17 @@ async function main() {
   if (process.env.DATABASE_URL) {
     boss = new PgBoss(process.env.DATABASE_URL);
     await boss.start();
-    for (const queue of ["deliver-notifications", "sunday-prompt", "purge-threads"]) {
+    for (const queue of ["deliver-notifications", "sunday-prompt", "purge-threads", "match-overlaps"]) {
       await boss.createQueue(queue);
     }
     await boss.schedule("deliver-notifications", "*/5 * * * *", {}, { tz: "UTC" });
     await boss.schedule("sunday-prompt", "*/15 * * * *", {}, { tz: "UTC" });
     await boss.schedule("purge-threads", "20 * * * *", {}, { tz: "UTC" });
+    await boss.schedule("match-overlaps", "*/15 * * * *", {}, { tz: "UTC" });
     await boss.work("deliver-notifications", deliverPendingNotifications);
     await boss.work("sunday-prompt", queueSundayPrompts);
     await boss.work("purge-threads", purgeExpiredThreads);
+    await boss.work("match-overlaps", runMatchingSweep);
   }
 
   const close = async () => {
