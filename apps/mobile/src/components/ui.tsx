@@ -497,22 +497,21 @@ export function NightStrip({
   return (
     <View style={styles.strip}>
       {nights.map((night, i) => (
-        <Pressable key={i} onPress={() => onToggle(i)} style={styles.night}>
+        <Pressable
+          key={i}
+          onPress={() => onToggle(i)}
+          style={styles.night}
+          accessibilityRole="button"
+          accessibilityLabel={night.label}
+          accessibilityState={{ selected: night.free }}
+        >
           {night.free ? (
             <LinearGradient
               colors={[colors.lampGradStart, colors.lampGradEnd]}
               style={styles.paneLit}
-            >
-              <View style={styles.sashLit} />
-              <View style={styles.sashLit} />
-              <View style={styles.sashLit} />
-            </LinearGradient>
+            />
           ) : (
-            <View style={styles.pane}>
-              <View style={styles.sash} />
-              <View style={styles.sash} />
-              <View style={styles.sash} />
-            </View>
+            <View style={styles.pane} />
           )}
           <Text style={[styles.nightLabel, night.free && styles.nightLabelLit]}>{night.label}</Text>
         </Pressable>
@@ -532,7 +531,7 @@ export function WeekTally({ count }: { count: number }) {
   const nightsLabel = count === 1 ? "One night" : `${count} nights`;
   return (
     <Text style={styles.tally}>
-      <Text style={styles.tallyBold}>{nightsLabel}</Text> lit · clears Monday morning
+      <Text style={styles.tallyBold}>{nightsLabel}</Text> lit
     </Text>
   );
 }
@@ -820,7 +819,7 @@ export function Composer({
 
 export function QuietLink({ label, onPress }: { label: string; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress}>
+    <Pressable onPress={onPress} style={styles.quietHit} accessibilityRole="link">
       <Text style={styles.quiet}>{label}</Text>
     </Pressable>
   );
@@ -1261,7 +1260,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     color: colors.muted,
   },
-  strip: { flexDirection: "row", gap: 8, marginTop: 28, height: 244 },
+  strip: { flexDirection: "row", gap: 8, marginTop: 24, height: 210 },
   night: { flex: 1, gap: 7, flexDirection: "column" },
   pane: {
     flex: 1,
@@ -1269,18 +1268,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.pane,
     borderWidth: 1,
     borderColor: "rgba(250,247,242,0.05)",
-    justifyContent: "space-evenly",
-    paddingVertical: 9,
-    paddingHorizontal: 5,
   },
   paneLit: {
     flex: 1,
     borderRadius: 7,
     borderWidth: 1,
     borderColor: "rgba(247,213,154,0.55)",
-    justifyContent: "space-evenly",
-    paddingVertical: 9,
-    paddingHorizontal: 5,
     ...Platform.select({
       web: { boxShadow: "0 0 11px rgba(223,139,50,0.3)" },
       default: {
@@ -1291,8 +1284,6 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  sash: { height: 1, backgroundColor: "rgba(250,247,242,0.06)" },
-  sashLit: { height: 1, backgroundColor: "rgba(158,83,20,0.22)" },
   nightLabel: {
     fontFamily: fonts.mono,
     fontSize: 11,
@@ -1581,13 +1572,19 @@ const styles = StyleSheet.create({
   sendReady: { backgroundColor: colors.lamp },
   sendIcon: { color: colors.chalk, fontSize: 14 },
   sendIconReady: { color: colors.ink },
+  quietHit: {
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 12,
+  },
   quiet: {
     fontFamily: fonts.body,
     fontSize: 13,
     color: colors.dim,
     textAlign: "center",
     textDecorationLine: "underline",
-    paddingVertical: 12,
+    textDecorationColor: "rgba(169,161,152,0.45)",
   },
   linkish: {
     fontFamily: fonts.body,
@@ -1601,13 +1598,17 @@ const styles = StyleSheet.create({
     color: colors.muted,
   },
   err: { fontFamily: fonts.body, fontSize: 13, color: colors.danger, marginTop: 14 },
+  weekFoot: {
+    alignItems: "center",
+    marginTop: 16,
+    gap: 2,
+  },
   quiethours: {
-    fontFamily: fonts.mono,
-    fontSize: 10.5,
-    color: colors.muted,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.dim,
     textAlign: "center",
-    marginTop: 12,
-    lineHeight: 17,
+    lineHeight: 20,
   },
   later: {
     fontFamily: fonts.body,

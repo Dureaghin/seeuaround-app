@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Text } from "react-native";
+import { Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { routeToPath } from "../../src/lib/resolveRoute";
 import { api } from "../../src/lib/api";
@@ -65,12 +65,14 @@ export default function SundayScreen() {
       <Spacer />
       {error ? <ErrText>{error}</ErrText> : null}
       <Actions>
-        <Button label={saving ? "Sending…" : "Send it"} onPress={save} loading={saving} />
+        <Button label={saving ? "Saving…" : "Save"} onPress={save} loading={saving} />
       </Actions>
-      <Text style={uiStyles.quiethours}>
-        Answer whenever. Nobody gets pinged before 8am their time.
-      </Text>
-      <QuietLink label="Sit this week out" onPress={() => router.push("/pause")} />
+      <View style={uiStyles.weekFoot}>
+        <Text style={uiStyles.quiethours}>
+          Answer whenever.{"\n"}Quiet until 8am their time.
+        </Text>
+        <QuietLink label="Sit this week out" onPress={() => router.push("/pause")} />
+      </View>
     </Screen>
   );
 }
