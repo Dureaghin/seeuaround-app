@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS connections (
   CHECK (user_a <> user_b)
 );
 
+ALTER TABLE connections ADD COLUMN IF NOT EXISTS requested_by UUID REFERENCES users(id) ON DELETE SET NULL;
+
 CREATE INDEX IF NOT EXISTS connections_user_a_idx ON connections(user_a);
 CREATE INDEX IF NOT EXISTS connections_user_b_idx ON connections(user_b);
 
@@ -132,6 +134,11 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 CREATE INDEX IF NOT EXISTS notifications_user_idx ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS notifications_user_kind_idx ON notifications(user_id, kind, created_at);
+CREATE INDEX IF NOT EXISTS notifications_due_idx ON notifications(created_at) WHERE sent_at IS NULL;
+CREATE INDEX IF NOT EXISTS overlap_members_user_idx ON overlap_members(user_id);
+CREATE INDEX IF NOT EXISTS messages_thread_created_idx ON messages(thread_id, created_at);
+CREATE INDEX IF NOT EXISTS invite_tokens_user_idx ON invite_tokens(user_id);
 
 CREATE TABLE IF NOT EXISTS hangout_checks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

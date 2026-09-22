@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useIsFocused, useLocalSearchParams } from "expo-router";
 import { api } from "../../src/lib/api";
 import { useApp } from "../../src/context/AppContext";
 import {
@@ -20,6 +20,7 @@ const AREA = "Saratoga Springs";
 
 export default function ThreadScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const focused = useIsFocused();
   const { me } = useApp();
   const [thread, setThread] = useState<Awaited<ReturnType<typeof api.getThread>> | null>(null);
   const [body, setBody] = useState("");
@@ -28,12 +29,12 @@ export default function ThreadScreen() {
   const [pinnedPlace, setPinnedPlace] = useState<string | null>("The Anchor");
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || !focused) return;
     const load = () => api.getThread(id).then(setThread).catch(() => {});
     load();
     const t = setInterval(load, 10000);
     return () => clearInterval(t);
-  }, [id]);
+  }, [id, focused]);
 
   async function send(text?: string) {
     const msg = (text ?? body).trim();
@@ -65,8 +66,8 @@ export default function ThreadScreen() {
   }, [thread?.expiresAt]);
 
   const memberNames = useMemo(() => {
-    const handles = new Set(thread?.messages.map((m) => m.handle) ?? []);
-    return Array.from(handles).slice(0, 3).join(", ") || "Your group";
+    const names = new Set(thread?.messages.map((m) => m.firstName).filter(Boolean) ?? []);
+    return Array.from(names).slice(0, 3).join(", ") || "Your group";
   }, [thread?.messages]);
 
   const dayTitle = useMemo(() => {
@@ -90,10 +91,11 @@ export default function ThreadScreen() {
     for (const m of thread?.messages ?? []) {
       const mine = m.userId === meId;
       const last = groups[groups.length - 1];
-      if (last && last.mine === mine && last.from === (mine ? undefined : m.handle)) {
+      const from = mine ? undefined : m.firstName || "Someone";
+      if (last && last.mine === mine && last.from === from) {
         last.bodies.push(m.body);
       } else {
-        groups.push({ mine, from: mine ? undefined : m.handle, bodies: [m.body] });
+        groups.push({ mine, from, bodies: [m.body] });
       }
     }
     return groups;

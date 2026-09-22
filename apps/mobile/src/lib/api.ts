@@ -98,7 +98,6 @@ export const api = {
     request<{
       connections: {
         id: string;
-        handle: string;
         firstName: string;
         status: string;
         freeTonight: boolean;
@@ -108,7 +107,7 @@ export const api = {
     }>("/connections"),
 
   getConnection: (id: string) =>
-    request<{ firstName: string; handle: string; status: string }>(`/connections/${id}`),
+    request<{ firstName: string; status: string }>(`/connections/${id}`),
 
   requestConnection: (shortCode: string) =>
     request("/connections/request", {
@@ -118,6 +117,9 @@ export const api = {
 
   acceptConnection: (id: string) =>
     request(`/connections/${id}/accept`, { method: "POST" }),
+
+  declineConnection: (id: string) =>
+    request(`/connections/${id}/decline`, { method: "POST" }),
 
   blockConnection: (id: string) =>
     request(`/connections/${id}/block`, { method: "POST" }),
@@ -131,7 +133,7 @@ export const api = {
       nightDate: string;
       expiresAt: string;
       dateLabel: string;
-      members: { id: string; handle: string; firstName: string; response: string | null }[];
+      members: { id: string; firstName: string; response: string | null }[];
       myResponse: string | null;
     }>(`/overlaps/${id}`),
 
@@ -145,7 +147,7 @@ export const api = {
     request<{
       id: string;
       expiresAt: string;
-      messages: { id: string; userId: string; handle: string; body: string; createdAt: string }[];
+      messages: { id: string; userId: string; firstName: string; body: string; createdAt: string }[];
     }>(`/threads/${id}`),
 
   sendMessage: (id: string, body: string) =>

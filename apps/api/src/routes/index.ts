@@ -40,6 +40,22 @@ const AUTH_VERIFY_LIMIT = {
   config: { rateLimit: { max: 10, timeWindow: "15 minutes" } },
 };
 
+const CONNECTION_REQUEST_LIMIT = {
+  config: { rateLimit: { max: 20, timeWindow: "15 minutes" } },
+};
+
+const SHORT_CODE_LIMIT = {
+  config: { rateLimit: { max: 5, timeWindow: "1 hour" } },
+};
+
+const MESSAGE_LIMIT = {
+  config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+};
+
+const INVITE_PREVIEW_LIMIT = {
+  config: { rateLimit: { max: 30, timeWindow: "15 minutes" } },
+};
+
 const GENERIC_AUTH_MSG = {
   ok: true,
   message: "If that email is registered, a code is on its way.",
@@ -311,13 +327,12 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const { rows } = await query<{
       id: string;
-      handle: string;
       first_name: string;
       status: string;
       free_tonight: boolean;
       week_set: boolean;
     }>(
-      `SELECT c.id, u.handle, u.first_name, c.status,
+      `SELECT c.id, u.first_name, c.status,
          EXISTS (
            SELECT 1 FROM windows w
            WHERE w.user_id = u.id
@@ -330,15 +345,14 @@ export async function registerRoutes(app: FastifyInstance) {
          ) AS week_set
        FROM connections c
        JOIN users u ON u.id = CASE WHEN c.user_a = $1 THEN c.user_b ELSE c.user_a END
-       WHERE (c.user_a = $1 OR c.user_b = $1) AND c.status <> 'blocked'
-       ORDER BY u.handle`,
+       WHERE (c.user_a = $1 OR c.user_b = $1) AND c.status IN ('pending', 'accepted')
+       ORDER BY u.first_name, c.id`,
       [userId, weekStart.toISOString(), weekEnd.toISOString()],
     );
 
     return {
       connections: rows.map((r) => ({
         id: r.id,
-        handle: r.handle,
         firstName: r.first_name,
         status: r.status,
         freeTonight: r.free_tonight,
@@ -350,22 +364,22 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get("/connections/:id", { preHandler: authHook }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { rows } = await query<{ first_name: string; handle: string; status: string }>(
-      `SELECT u.first_name, u.handle, c.status
+    const { rows } = await query<{ first_name: string; status: string }>(
+      `SELECT u.first_name, c.status
        FROM connections c
        JOIN users u ON u.id = CASE WHEN c.user_a = $2 THEN c.user_b ELSE c.user_a END
-       WHERE c.id = $1 AND (c.user_a = $2 OR c.user_b = $2)`,
+       WHERE c.id = $1 AND (c.user_a = $2 OR c.user_b = $2)
+         AND c.status IN ('pending', 'accepted')`,
       [id, request.user!.id],
     );
     if (!rows[0]) return reply.code(404).send({ error: "not_found" });
     return {
       firstName: rows[0].first_name,
-      handle: rows[0].handle,
       status: rows[0].status,
     };
   });
 
-  app.post("/connections/request", { preHandler: authHook }, async (request, reply) => {
+  app.post("/connections/request", { preHandler: authHook, ...CONNECTION_REQUEST_LIMIT }, async (request, reply) => {
     const parsed = ConnectionRequestSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_code" });
 
@@ -380,10 +394,11 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const [userA, userB] = [request.user!.id, targetId].sort();
     const { rows: created } = await query<{ id: string }>(
-      `INSERT INTO connections (user_a, user_b, status) VALUES ($1, $2, 'pending')
+      `INSERT INTO connections (user_a, user_b, status, requested_by)
+       VALUES ($1, $2, 'pending', $3)
        ON CONFLICT (user_a, user_b) DO NOTHING
        RETURNING id`,
-      [userA, userB],
+      [userA, userB, request.user!.id],
     );
     const connectionId = created[0]?.id;
     if (connectionId) {
@@ -403,7 +418,22 @@ export async function registerRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const { rowCount } = await query(
       `UPDATE connections SET status = 'accepted'
-       WHERE id = $1 AND status = 'pending' AND (user_a = $2 OR user_b = $2)`,
+       WHERE id = $1 AND status = 'pending'
+         AND (user_a = $2 OR user_b = $2)
+         AND (requested_by IS NULL OR requested_by <> $2)`,
+      [id, request.user!.id],
+    );
+    if (!rowCount) return reply.code(404).send({ error: "not_found" });
+    return { ok: true };
+  });
+
+  app.post("/connections/:id/decline", { preHandler: authHook }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { rowCount } = await query(
+      `UPDATE connections SET status = 'declined'
+       WHERE id = $1 AND status = 'pending'
+         AND (user_a = $2 OR user_b = $2)
+         AND (requested_by IS NULL OR requested_by <> $2)`,
       [id, request.user!.id],
     );
     if (!rowCount) return reply.code(404).send({ error: "not_found" });
@@ -485,7 +515,7 @@ export async function registerRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post("/me/short-code", { preHandler: authHook }, async (request, reply) => {
+  app.post("/me/short-code", { preHandler: authHook, ...SHORT_CODE_LIMIT }, async (request, reply) => {
     for (let i = 0; i < 5; i++) {
       const shortCode = generateShortCode();
       try {
@@ -514,11 +544,10 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const { rows: members } = await query<{
       id: string;
-      handle: string;
       first_name: string;
       response: string | null;
     }>(
-      `SELECT u.id, u.handle, u.first_name, om.response
+      `SELECT u.id, u.first_name, om.response
        FROM overlap_members om JOIN users u ON u.id = om.user_id
        WHERE om.overlap_id = $1`,
       [id],
@@ -536,7 +565,6 @@ export async function registerRoutes(app: FastifyInstance) {
       }),
       members: members.map((m) => ({
         id: m.id,
-        handle: m.handle,
         firstName: m.first_name,
         response: m.response,
       })),
@@ -595,13 +623,18 @@ export async function registerRoutes(app: FastifyInstance) {
     const { rows: messages } = await query<{
       id: string;
       user_id: string;
-      handle: string;
+      first_name: string;
       body: string;
       created_at: string;
     }>(
-      `SELECT m.id, m.user_id, u.handle, m.body, m.created_at
-       FROM messages m JOIN users u ON u.id = m.user_id
-       WHERE m.thread_id = $1 ORDER BY m.created_at ASC`,
+      `SELECT id, user_id, first_name, body, created_at FROM (
+         SELECT m.id, m.user_id, u.first_name, m.body, m.created_at
+         FROM messages m JOIN users u ON u.id = m.user_id
+         WHERE m.thread_id = $1
+         ORDER BY m.created_at DESC
+         LIMIT 200
+       ) recent
+       ORDER BY created_at ASC`,
       [id],
     );
 
@@ -611,14 +644,14 @@ export async function registerRoutes(app: FastifyInstance) {
       messages: messages.map((m) => ({
         id: m.id,
         userId: m.user_id,
-        handle: m.handle,
+        firstName: m.first_name,
         body: m.body,
         createdAt: m.created_at,
       })),
     };
   });
 
-  app.post("/threads/:id/messages", { preHandler: authHook }, async (request, reply) => {
+  app.post("/threads/:id/messages", { preHandler: authHook, ...MESSAGE_LIMIT }, async (request, reply) => {
     const parsed = ThreadMessageSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
 
@@ -638,6 +671,10 @@ export async function registerRoutes(app: FastifyInstance) {
     const parsed = RegisterPushSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
 
+    await query(`DELETE FROM push_tokens WHERE token = $1 AND user_id <> $2`, [
+      parsed.data.token,
+      request.user!.id,
+    ]);
     await query(
       `INSERT INTO push_tokens (user_id, token, platform) VALUES ($1, $2, $3)
        ON CONFLICT (user_id, token) DO UPDATE SET platform = EXCLUDED.platform`,
@@ -710,7 +747,7 @@ export async function registerRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
-  app.get("/invites/:token/preview", async (request, reply) => {
+  app.get("/invites/:token/preview", INVITE_PREVIEW_LIMIT, async (request, reply) => {
     const { token } = request.params as { token: string };
     const tokenHash = hashToken(token);
     const { rows } = await query<{ first_name: string }>(
@@ -742,20 +779,36 @@ export async function registerRoutes(app: FastifyInstance) {
 
     try {
       await withTransaction(async (client) => {
-        await client.query(
-          `INSERT INTO connections (user_a, user_b, status) VALUES ($1, $2, 'pending')
-           ON CONFLICT (user_a, user_b) DO NOTHING`,
-          [userA, userB],
+        const inserted = await client.query(
+          `INSERT INTO connections (user_a, user_b, status, requested_by)
+           VALUES ($1, $2, 'pending', $3)
+           ON CONFLICT (user_a, user_b) DO NOTHING
+           RETURNING id`,
+          [userA, userB, request.user!.id],
         );
+        if (!inserted.rows[0]) {
+          const existing = await client.query<{ status: string }>(
+            `SELECT status FROM connections WHERE user_a = $1 AND user_b = $2`,
+            [userA, userB],
+          );
+          if (existing.rows[0]?.status === "blocked" || existing.rows[0]?.status === "declined") {
+            throw new Error("invite_closed");
+          }
+          return;
+        }
         const { rowCount } = await client.query(
           `UPDATE invite_tokens SET uses_remaining = uses_remaining - 1
-           WHERE token_hash = $1 AND uses_remaining > 0`,
+           WHERE token_hash = $1 AND revoked_at IS NULL
+             AND expires_at > now() AND uses_remaining > 0`,
           [tokenHash],
         );
         if (!rowCount) throw new Error("invite_exhausted");
       });
     } catch (err) {
-      if (err instanceof Error && err.message === "invite_exhausted") {
+      if (
+        err instanceof Error &&
+        (err.message === "invite_exhausted" || err.message === "invite_closed")
+      ) {
         return reply.code(404).send({ error: "not_found" });
       }
       throw err;

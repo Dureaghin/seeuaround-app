@@ -28,10 +28,18 @@ export async function deliverPendingNotifications() {
 
   const messages: ExpoPushMessage[] = [];
   const meta: { notifId: string; ticketId?: string }[] = [];
+  const deferred: { id: string; at: string }[] = [];
+  const badTokens: string[] = [];
 
   for (const row of rows) {
-    if (!Expo.isExpoPushToken(row.token)) continue;
-    if (!isInDeliveryWindow(row.timezone)) continue;
+    if (!Expo.isExpoPushToken(row.token)) {
+      badTokens.push(row.token);
+      continue;
+    }
+    if (!isInDeliveryWindow(row.timezone)) {
+      deferred.push({ id: row.id, at: nextDeliveryAt(row.timezone).toISOString() });
+      continue;
+    }
 
     messages.push({
       to: row.token,
@@ -44,6 +52,21 @@ export async function deliverPendingNotifications() {
       },
     });
     meta.push({ notifId: row.id });
+  }
+
+  if (badTokens.length > 0) {
+    await query(`DELETE FROM push_tokens WHERE token = ANY($1::text[])`, [badTokens]);
+  }
+  if (deferred.length > 0) {
+    await query(
+      `UPDATE notifications AS n
+       SET scheduled_for = v.at
+       FROM (
+         SELECT UNNEST($1::uuid[]) AS id, UNNEST($2::timestamptz[]) AS at
+       ) AS v
+       WHERE n.id = v.id AND n.sent_at IS NULL`,
+      [deferred.map((d) => d.id), deferred.map((d) => d.at)],
+    );
   }
 
   if (messages.length === 0) return;
@@ -79,19 +102,29 @@ export async function deliverPendingNotifications() {
   );
 }
 
-function isInDeliveryWindow(timezone: string): boolean {
+function isInDeliveryWindow(timezone: string, at = new Date()): boolean {
   try {
     const hour = Number(
       new Intl.DateTimeFormat("en-US", {
         timeZone: timezone,
         hour: "numeric",
         hour12: false,
-      }).format(new Date()),
+      }).format(at),
     );
-    return hour >= 8 && hour < 22;
+    const normalized = hour === 24 ? 0 : hour;
+    return normalized >= 8 && normalized < 22;
   } catch {
     return true;
   }
+}
+
+function nextDeliveryAt(timezone: string): Date {
+  const start = Date.now();
+  for (let hours = 1; hours <= 16; hours++) {
+    const at = new Date(start + hours * 3_600_000);
+    if (isInDeliveryWindow(timezone, at)) return at;
+  }
+  return new Date(start + 8 * 3_600_000);
 }
 
 export async function queueNotification(input: {
@@ -113,11 +146,18 @@ export async function queueSundayPrompts() {
     `INSERT INTO notifications (user_id, kind, title, body, data, scheduled_for)
      SELECT u.id, 'sunday', 'This week', 'Which nights are you free?', jsonb_build_object('route', 'sunday'), now()
      FROM users u
-     WHERE NOT EXISTS (
-       SELECT 1 FROM notifications n
-       WHERE n.user_id = u.id AND n.kind = 'sunday'
-         AND n.created_at > date_trunc('week', now())
-     )`,
+     WHERE u.paused = FALSE
+       AND u.age_verified_at IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM windows w
+         WHERE w.user_id = u.id
+           AND w.span && tstzrange(now(), now() + interval '7 days')
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM notifications n
+         WHERE n.user_id = u.id AND n.kind = 'sunday'
+           AND n.created_at > date_trunc('week', now())
+       )`,
   );
 }
 

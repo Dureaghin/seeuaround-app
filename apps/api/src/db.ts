@@ -4,9 +4,12 @@ const { Pool } = pg;
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes("localhost")
-    ? undefined
-    : { rejectUnauthorized: false },
+  ssl:
+    !process.env.DATABASE_URL ||
+    process.env.DATABASE_URL.includes("localhost") ||
+    process.env.DATABASE_URL.includes("127.0.0.1")
+      ? undefined
+      : { rejectUnauthorized: process.env.DATABASE_SSL_NO_VERIFY !== "true" },
 });
 
 export async function query<T extends pg.QueryResultRow>(

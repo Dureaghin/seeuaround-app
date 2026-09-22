@@ -21,8 +21,8 @@ export default function AcceptScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { refresh } = useApp();
-  const [peer, setPeer] = useState<{ firstName: string; handle: string } | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [peer, setPeer] = useState<{ firstName: string } | null>(null);
+  const [busy, setBusy] = useState<"accept" | "ignore" | null>(null);
 
   useEffect(() => {
     if (id) api.getConnection(id).then(setPeer).catch(() => {});
@@ -39,19 +39,26 @@ export default function AcceptScreen() {
 
   async function accept() {
     if (!id) return;
-    setLoading(true);
+    setBusy("accept");
     try {
       await api.acceptConnection(id);
       const state = await refresh();
       router.replace(routeToPath(state!) as never);
     } finally {
-      setLoading(false);
+      setBusy(null);
     }
   }
 
   async function ignore() {
-    const state = await refresh();
-    router.replace(routeToPath(state!) as never);
+    if (!id) return;
+    setBusy("ignore");
+    try {
+      await api.declineConnection(id);
+      const state = await refresh();
+      router.replace(routeToPath(state!) as never);
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
@@ -86,8 +93,21 @@ export default function AcceptScreen() {
 
       <Spacer />
       <Actions row>
-        <Button label="Accept" onPress={accept} loading={loading} style={{ flex: 1 }} />
-        <Button label="Ignore" onPress={ignore} variant="ghost" style={{ flex: 1 }} />
+        <Button
+          label="Accept"
+          onPress={accept}
+          loading={busy === "accept"}
+          disabled={busy !== null}
+          style={{ flex: 1 }}
+        />
+        <Button
+          label="Ignore"
+          onPress={ignore}
+          variant="ghost"
+          loading={busy === "ignore"}
+          disabled={busy !== null}
+          style={{ flex: 1 }}
+        />
       </Actions>
       <SmallPrint>Ignoring is silent. They aren't told.</SmallPrint>
     </Screen>

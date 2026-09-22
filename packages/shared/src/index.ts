@@ -69,12 +69,14 @@ export const VerifyCodeSchema = z.object({
 export type VerifyCodeInput = z.infer<typeof VerifyCodeSchema>;
 
 export const WeekWindowsSchema = z.object({
-  nights: z.array(
-    z.object({
-      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-      free: z.boolean(),
-    }),
-  ),
+  nights: z
+    .array(
+      z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        free: z.boolean(),
+      }),
+    )
+    .max(7),
 });
 export type WeekWindowsInput = z.infer<typeof WeekWindowsSchema>;
 
@@ -132,7 +134,6 @@ export type SetNameInput = z.infer<typeof SetNameSchema>;
 
 export type Connection = {
   id: string;
-  handle: string;
   firstName: string;
   freeTonight: boolean;
   status: "accepted" | "pending_in" | "pending_out";
@@ -141,7 +142,7 @@ export type Connection = {
 export type OverlapDetail = {
   id: string;
   dateLabel: string;
-  members: { id: string; handle: string; firstName: string; response: string | null }[];
+  members: { id: string; firstName: string; response: string | null }[];
   myResponse: string | null;
 };
 
@@ -151,7 +152,7 @@ export type ThreadDetail = {
   messages: {
     id: string;
     userId: string;
-    handle: string;
+    firstName: string;
     body: string;
     createdAt: string;
   }[];
