@@ -90,6 +90,26 @@ CREATE TABLE IF NOT EXISTS threads (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE threads ADD COLUMN IF NOT EXISTS area TEXT NOT NULL DEFAULT 'Saratoga Springs';
+ALTER TABLE threads ADD COLUMN IF NOT EXISTS pinned_place TEXT;
+
+CREATE TABLE IF NOT EXISTS thread_places (
+  thread_id UUID NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  votes INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY (thread_id, name)
+);
+
+ALTER TABLE thread_places ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp();
+
+CREATE TABLE IF NOT EXISTS thread_votes (
+  thread_id UUID NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  place_name TEXT NOT NULL,
+  PRIMARY KEY (thread_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   thread_id UUID NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
@@ -98,6 +118,10 @@ CREATE TABLE IF NOT EXISTS messages (
   audio_key TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS duration_ms INT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS audio BYTEA;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS audio_type TEXT;
 
 CREATE TABLE IF NOT EXISTS push_tokens (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

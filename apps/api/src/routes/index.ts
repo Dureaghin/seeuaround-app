@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { PoolClient } from "pg";
 import {
   AgeConfirmSchema,
   ConnectionRequestSchema,
@@ -6,7 +7,9 @@ import {
   PushReceivedSchema,
   RegisterPushSchema,
   SendCodeSchema,
+  ThreadAreaSchema,
   ThreadMessageSchema,
+  ThreadVoteSchema,
   DeleteAccountSchema,
   INVITE_MAX_USES,
   INVITE_TTL_DAYS,
@@ -152,6 +155,171 @@ async function verifyAuthCode(email: string, code: string): Promise<boolean> {
 
   await query(`DELETE FROM auth_codes WHERE email = $1`, [email]);
   return true;
+}
+
+const DEFAULT_PLACES = ["The Anchor", "Bar Nostra", "Wherever's open"];
+
+function voiceLabel(durationMs: number): string {
+  const total = Math.max(1, Math.round(durationMs / 1000));
+  const mins = Math.floor(total / 60);
+  const secs = String(total % 60).padStart(2, "0");
+  return `Voice note · ${mins}:${secs}`;
+}
+
+function audioMime(raw?: string): string | null {
+  const base = (raw ?? "audio/webm").split(";")[0]?.trim().toLowerCase();
+  if (base === "audio/webm" || base === "audio/mpeg" || base === "audio/aac") return base;
+  if (base === "audio/mp4" || base === "audio/m4a" || base === "audio/x-m4a") return "audio/mp4";
+  return null;
+}
+
+function decodeAudio(raw?: string): Buffer | null {
+  if (!raw) return null;
+  if (!/^[A-Za-z0-9+/=\s]+$/.test(raw)) return null;
+  const audio = Buffer.from(raw, "base64");
+  if (audio.length === 0 || audio.length > 1_500_000) return null;
+  return audio;
+}
+
+async function isThreadMember(threadId: string, userId: string): Promise<boolean> {
+  const { rows } = await query<{ id: string }>(
+    `SELECT t.id FROM threads t
+     JOIN overlap_members om ON om.overlap_id = t.overlap_id AND om.user_id = $2 AND om.response = 'in'
+     WHERE t.id = $1`,
+    [threadId, userId],
+  );
+  return Boolean(rows[0]);
+}
+
+async function loadThreadPlan(threadId: string, userId: string) {
+  const { rows: meta } = await query<{ area: string; pinned_place: string | null }>(
+    `SELECT area, pinned_place FROM threads WHERE id = $1`,
+    [threadId],
+  );
+  let { rows: places } = await query<{ name: string; votes: number }>(
+    `SELECT name, votes FROM thread_places WHERE thread_id = $1
+     ORDER BY CASE name
+       WHEN 'The Anchor' THEN 0
+       WHEN 'Bar Nostra' THEN 1
+       WHEN 'Wherever''s open' THEN 2
+       ELSE 3
+     END, created_at ASC, name ASC`,
+    [threadId],
+  );
+  if (places.length === 0) {
+    await query(
+      `INSERT INTO thread_places (thread_id, name, votes, created_at)
+       SELECT $1, name, 0, clock_timestamp() + (ordinality * interval '1 millisecond')
+       FROM unnest($2::text[]) WITH ORDINALITY AS t(name, ordinality)
+       ON CONFLICT DO NOTHING`,
+      [threadId, DEFAULT_PLACES],
+    );
+    places = DEFAULT_PLACES.map((name) => ({ name, votes: 0 }));
+  }
+  const { rows: mine } = await query<{ place_name: string }>(
+    `SELECT place_name FROM thread_votes WHERE thread_id = $1 AND user_id = $2`,
+    [threadId, userId],
+  );
+  const mineName = mine[0]?.place_name ?? null;
+  const top = places.reduce<{ name: string; votes: number } | null>((best, place) => {
+    if (!best || place.votes > best.votes) return place;
+    return best;
+  }, null);
+  const pinned = top && top.votes > 0 ? top.name : null;
+  if ((meta[0]?.pinned_place ?? null) !== pinned) {
+    await query(`UPDATE threads SET pinned_place = $2 WHERE id = $1`, [threadId, pinned]);
+  }
+  return {
+    area: meta[0]?.area || "Saratoga Springs",
+    pinnedPlace: pinned,
+    places: places.map((place) => ({
+      name: place.name,
+      votes: place.votes,
+      mine: place.name === mineName,
+    })),
+  };
+}
+
+async function recomputePin(threadId: string, client: PoolClient) {
+  const { rows } = await client.query<{ name: string }>(
+    `SELECT name FROM thread_places
+     WHERE thread_id = $1 AND votes > 0
+     ORDER BY votes DESC,
+       CASE name
+         WHEN 'The Anchor' THEN 0
+         WHEN 'Bar Nostra' THEN 1
+         WHEN 'Wherever''s open' THEN 2
+         ELSE 3
+       END,
+       created_at ASC, name ASC
+     LIMIT 1`,
+    [threadId],
+  );
+  const pinned = rows[0]?.name ?? null;
+  await client.query(`UPDATE threads SET pinned_place = $2 WHERE id = $1`, [threadId, pinned]);
+}
+
+async function castPlaceVote(threadId: string, userId: string, name: string) {
+  await withTransaction(async (client) => {
+    const existing = await client.query<{ name: string }>(
+      `SELECT name FROM thread_places WHERE thread_id = $1 AND lower(name) = lower($2)`,
+      [threadId, name],
+    );
+    const placeName = existing.rows[0]?.name ?? name;
+    if (!existing.rows[0]) {
+      await client.query(
+        `INSERT INTO thread_places (thread_id, name, votes) VALUES ($1, $2, 0)`,
+        [threadId, placeName],
+      );
+    }
+    const prev = await client.query<{ place_name: string }>(
+      `SELECT place_name FROM thread_votes WHERE thread_id = $1 AND user_id = $2`,
+      [threadId, userId],
+    );
+    const previous = prev.rows[0]?.place_name;
+    if (previous && previous !== placeName) {
+      await client.query(
+        `UPDATE thread_places SET votes = GREATEST(votes - 1, 0)
+         WHERE thread_id = $1 AND name = $2`,
+        [threadId, previous],
+      );
+    }
+    if (previous === placeName) return;
+    if (previous) {
+      await client.query(
+        `UPDATE thread_votes SET place_name = $3 WHERE thread_id = $1 AND user_id = $2`,
+        [threadId, userId, placeName],
+      );
+    } else {
+      await client.query(
+        `INSERT INTO thread_votes (thread_id, user_id, place_name) VALUES ($1, $2, $3)`,
+        [threadId, userId, placeName],
+      );
+    }
+    await client.query(
+      `UPDATE thread_places SET votes = votes + 1 WHERE thread_id = $1 AND name = $2`,
+      [threadId, placeName],
+    );
+    await recomputePin(threadId, client);
+  });
+}
+
+async function clearPlaceVote(threadId: string, userId: string) {
+  await withTransaction(async (client) => {
+    const prev = await client.query<{ place_name: string }>(
+      `DELETE FROM thread_votes WHERE thread_id = $1 AND user_id = $2 RETURNING place_name`,
+      [threadId, userId],
+    );
+    const previous = prev.rows[0]?.place_name;
+    if (previous) {
+      await client.query(
+        `UPDATE thread_places SET votes = GREATEST(votes - 1, 0)
+         WHERE thread_id = $1 AND name = $2`,
+        [threadId, previous],
+      );
+    }
+    await recomputePin(threadId, client);
+  });
 }
 
 export async function registerRoutes(app: FastifyInstance) {
@@ -308,7 +476,7 @@ export async function registerRoutes(app: FastifyInstance) {
       nights: Array.from({ length: 7 }, (_, i) => {
         const d = new Date(monday);
         d.setDate(monday.getDate() + i);
-        const date = d.toISOString().slice(0, 10);
+        const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         return { date, label: labels[i], free: rows.some((r) => r.date === date) };
       }),
     };
@@ -549,16 +717,18 @@ export async function registerRoutes(app: FastifyInstance) {
     }>(
       `SELECT u.id, u.first_name, om.response
        FROM overlap_members om JOIN users u ON u.id = om.user_id
-       WHERE om.overlap_id = $1`,
-      [id],
+       WHERE om.overlap_id = $1
+       ORDER BY (u.id = $2) DESC, u.first_name`,
+      [id, request.user!.id],
     );
     const my = members.find((m) => m.id === request.user!.id);
+    const [year, month, day] = overlapRows[0].night_date.slice(0, 10).split("-").map(Number);
 
     return {
       id,
       nightDate: overlapRows[0].night_date,
       expiresAt: overlapRows[0].expires_at,
-      dateLabel: new Date(overlapRows[0].night_date).toLocaleDateString("en-US", {
+      dateLabel: new Date(year, month - 1, day).toLocaleDateString("en-US", {
         weekday: "long",
         month: "short",
         day: "numeric",
@@ -612,8 +782,12 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get("/threads/:id", { preHandler: authHook }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { rows: threadRows } = await query<{ expires_at: string }>(
-      `SELECT t.expires_at FROM threads t
+    const { rows: threadRows } = await query<{
+      expires_at: string;
+      area: string;
+      pinned_place: string | null;
+    }>(
+      `SELECT t.expires_at, t.area, t.pinned_place FROM threads t
        JOIN overlap_members om ON om.overlap_id = t.overlap_id AND om.user_id = $2
        WHERE t.id = $1 AND om.response = 'in'`,
       [id, request.user!.id],
@@ -626,9 +800,10 @@ export async function registerRoutes(app: FastifyInstance) {
       first_name: string;
       body: string;
       created_at: string;
+      duration_ms: number | null;
     }>(
-      `SELECT id, user_id, first_name, body, created_at FROM (
-         SELECT m.id, m.user_id, u.first_name, m.body, m.created_at
+      `SELECT id, user_id, first_name, body, created_at, duration_ms FROM (
+         SELECT m.id, m.user_id, u.first_name, m.body, m.created_at, m.duration_ms
          FROM messages m JOIN users u ON u.id = m.user_id
          WHERE m.thread_id = $1
          ORDER BY m.created_at DESC
@@ -641,30 +816,100 @@ export async function registerRoutes(app: FastifyInstance) {
     return {
       id,
       expiresAt: threadRows[0].expires_at,
+      plan: await loadThreadPlan(id, request.user!.id),
       messages: messages.map((m) => ({
         id: m.id,
         userId: m.user_id,
         firstName: m.first_name,
         body: m.body,
         createdAt: m.created_at,
+        durationMs: m.duration_ms,
       })),
     };
   });
 
-  app.post("/threads/:id/messages", { preHandler: authHook, ...MESSAGE_LIMIT }, async (request, reply) => {
-    const parsed = ThreadMessageSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+  app.post(
+    "/threads/:id/messages",
+    { preHandler: authHook, bodyLimit: 2_500_000, ...MESSAGE_LIMIT },
+    async (request, reply) => {
+      const parsed = ThreadMessageSchema.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
 
-    const { id } = request.params as { id: string };
-    const { rows } = await query<{ id: string }>(
-      `INSERT INTO messages (thread_id, user_id, body)
-       SELECT t.id, $2, $3 FROM threads t
-       JOIN overlap_members om ON om.overlap_id = t.overlap_id AND om.user_id = $2 AND om.response = 'in'
-       WHERE t.id = $1 RETURNING id`,
-      [id, request.user!.id, parsed.data.body],
+      const { id } = request.params as { id: string };
+      const audio = decodeAudio(parsed.data.audio);
+      if (parsed.data.audio && !audio) return reply.code(400).send({ error: "invalid_audio" });
+      const mime = audioMime(parsed.data.mime);
+      if (audio && !mime) return reply.code(400).send({ error: "invalid_audio" });
+
+      const body = audio
+        ? voiceLabel(parsed.data.durationMs ?? 0)
+        : (parsed.data.body ?? "").trim();
+      if (!body) return reply.code(400).send({ error: "invalid_request" });
+
+      const { rows } = await query<{ id: string }>(
+        `INSERT INTO messages (thread_id, user_id, body, audio, audio_type, duration_ms)
+         SELECT t.id, $2, $3, $4, $5, $6 FROM threads t
+         JOIN overlap_members om ON om.overlap_id = t.overlap_id AND om.user_id = $2 AND om.response = 'in'
+         WHERE t.id = $1 RETURNING id`,
+        [
+          id,
+          request.user!.id,
+          body,
+          audio,
+          audio ? mime : null,
+          audio ? parsed.data.durationMs : null,
+        ],
+      );
+      if (!rows[0]) return reply.code(404).send({ error: "not_found" });
+      return { id: rows[0].id };
+    },
+  );
+
+  app.get("/threads/:id/messages/:messageId/audio", { preHandler: authHook }, async (request, reply) => {
+    const { id, messageId } = request.params as { id: string; messageId: string };
+    const { rows } = await query<{ audio: Buffer; audio_type: string | null }>(
+      `SELECT m.audio, m.audio_type FROM messages m
+       JOIN threads t ON t.id = m.thread_id
+       JOIN overlap_members om ON om.overlap_id = t.overlap_id AND om.user_id = $3 AND om.response = 'in'
+       WHERE m.thread_id = $1 AND m.id = $2 AND m.audio IS NOT NULL`,
+      [id, messageId, request.user!.id],
     );
     if (!rows[0]) return reply.code(404).send({ error: "not_found" });
-    return { id: rows[0].id };
+    return reply.type(rows[0].audio_type || "audio/webm").send(rows[0].audio);
+  });
+
+  app.post("/threads/:id/vote", { preHandler: authHook }, async (request, reply) => {
+    const parsed = ThreadVoteSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    const { id } = request.params as { id: string };
+    if (!(await isThreadMember(id, request.user!.id))) {
+      return reply.code(404).send({ error: "not_found" });
+    }
+    await castPlaceVote(id, request.user!.id, parsed.data.name);
+    return { plan: await loadThreadPlan(id, request.user!.id) };
+  });
+
+  app.delete("/threads/:id/vote", { preHandler: authHook }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!(await isThreadMember(id, request.user!.id))) {
+      return reply.code(404).send({ error: "not_found" });
+    }
+    await clearPlaceVote(id, request.user!.id);
+    return { plan: await loadThreadPlan(id, request.user!.id) };
+  });
+
+  app.post("/threads/:id/area", { preHandler: authHook }, async (request, reply) => {
+    const parsed = ThreadAreaSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    const { id } = request.params as { id: string };
+    const { rowCount } = await query(
+      `UPDATE threads t SET area = $3
+       FROM overlap_members om
+       WHERE t.id = $1 AND om.overlap_id = t.overlap_id AND om.user_id = $2 AND om.response = 'in'`,
+      [id, request.user!.id, parsed.data.area],
+    );
+    if (!rowCount) return reply.code(404).send({ error: "not_found" });
+    return { plan: await loadThreadPlan(id, request.user!.id) };
   });
 
   app.post("/push/register", { preHandler: authHook }, async (request, reply) => {

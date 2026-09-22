@@ -90,10 +90,25 @@ export const ConnectionRequestSchema = z.object({
 });
 export type ConnectionRequestInput = z.infer<typeof ConnectionRequestSchema>;
 
-export const ThreadMessageSchema = z.object({
-  body: z.string().min(1).max(2000),
-});
+export const ThreadMessageSchema = z
+  .object({
+    body: z.string().trim().max(2000).optional(),
+    audio: z.string().max(2_000_000).optional(),
+    mime: z.string().max(80).optional(),
+    durationMs: z.number().int().min(400).max(60_000).optional(),
+  })
+  .refine((data) => Boolean(data.body) || Boolean(data.audio && data.durationMs));
 export type ThreadMessageInput = z.infer<typeof ThreadMessageSchema>;
+
+export const ThreadVoteSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+});
+export type ThreadVoteInput = z.infer<typeof ThreadVoteSchema>;
+
+export const ThreadAreaSchema = z.object({
+  area: z.string().trim().min(1).max(40),
+});
+export type ThreadAreaInput = z.infer<typeof ThreadAreaSchema>;
 
 export const PushReceivedSchema = z.object({
   notificationId: z.string().uuid(),

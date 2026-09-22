@@ -147,14 +147,71 @@ export const api = {
     request<{
       id: string;
       expiresAt: string;
-      messages: { id: string; userId: string; firstName: string; body: string; createdAt: string }[];
+      plan: {
+        area: string;
+        pinnedPlace: string | null;
+        places: { name: string; votes: number; mine: boolean }[];
+      };
+      messages: {
+        id: string;
+        userId: string;
+        firstName: string;
+        body: string;
+        createdAt: string;
+        durationMs: number | null;
+      }[];
     }>(`/threads/${id}`),
 
-  sendMessage: (id: string, body: string) =>
+  sendMessage: (
+    id: string,
+    payload: { body?: string; audio?: string; mime?: string; durationMs?: number },
+  ) =>
     request(`/threads/${id}/messages`, {
       method: "POST",
-      body: JSON.stringify({ body }),
+      body: JSON.stringify(payload),
     }),
+
+  votePlace: (id: string, name: string) =>
+    request<{
+      plan: {
+        area: string;
+        pinnedPlace: string | null;
+        places: { name: string; votes: number; mine: boolean }[];
+      };
+    }>(`/threads/${id}/vote`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+
+  clearVote: (id: string) =>
+    request<{
+      plan: {
+        area: string;
+        pinnedPlace: string | null;
+        places: { name: string; votes: number; mine: boolean }[];
+      };
+    }>(`/threads/${id}/vote`, { method: "DELETE" }),
+
+  setArea: (id: string, area: string) =>
+    request<{
+      plan: {
+        area: string;
+        pinnedPlace: string | null;
+        places: { name: string; votes: number; mine: boolean }[];
+      };
+    }>(`/threads/${id}/area`, {
+      method: "POST",
+      body: JSON.stringify({ area }),
+    }),
+
+  messageAudioUrl: async (threadId: string, messageId: string) => {
+    const token = await getToken();
+    const res = await fetch(`${API_URL}/threads/${threadId}/messages/${messageId}/audio`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, "audio");
+    return URL.createObjectURL(await res.blob());
+  },
 
   createInvite: () => request<InviteInfo>("/invites", { method: "POST" }),
 

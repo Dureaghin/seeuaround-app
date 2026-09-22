@@ -1,6 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   Linking,
   Platform,
   Pressable,
@@ -15,6 +17,7 @@ import { useSegments, useIsFocused } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import QRCode from "react-native-qrcode-svg";
+import Svg, { Circle, Path } from "react-native-svg";
 import { AmbientBackground } from "./AmbientBackground";
 import { BrandLockup } from "./Logo";
 import { TAB_BAR_HEIGHT } from "./AppTabBar";
@@ -536,6 +539,79 @@ export function WeekTally({ count }: { count: number }) {
   );
 }
 
+/** Prototype `.cell.shared`: a 3s glow, brighter at mid-cycle. */
+const BREATHE_CSS =
+  "@keyframes sua-breathe{0%,100%{box-shadow:0 0 14px rgba(255,233,184,.35)}50%{box-shadow:0 0 26px rgba(255,233,184,.72)}}@keyframes sua-mic{0%,100%{box-shadow:0 0 0 0 rgba(243,194,103,.5)}50%{box-shadow:0 0 0 9px rgba(243,194,103,0)}}";
+
+function ensureBreathe() {
+  if (Platform.OS !== "web" || typeof document === "undefined") return;
+  let style = document.getElementById("sua-breathe");
+  if (!style) {
+    style = document.createElement("style");
+    style.id = "sua-breathe";
+    document.head.appendChild(style);
+  }
+  if (style.textContent !== BREATHE_CSS) style.textContent = BREATHE_CSS;
+}
+
+const cellBreathe =
+  Platform.OS === "web"
+    ? ({
+        animationName: "sua-breathe",
+        animationDuration: "3s",
+        animationIterationCount: "infinite",
+        animationTimingFunction: "ease-in-out",
+      } as object)
+    : null;
+
+function SharedNight() {
+  const glow = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glow, {
+          toValue: 1,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+        Animated.timing(glow, {
+          toValue: 0,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [glow]);
+
+  if (Platform.OS === "web") {
+    ensureBreathe();
+    return <View style={[styles.cell, styles.cellShared, cellBreathe]} />;
+  }
+
+  const shadowRadius = glow.interpolate({ inputRange: [0, 1], outputRange: [14, 26] });
+  const shadowOpacity = glow.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.72] });
+  return (
+    <Animated.View
+      style={[
+        styles.cell,
+        styles.cellShared,
+        {
+          shadowColor: "#FFE9B8",
+          shadowOffset: { width: 0, height: 0 },
+          shadowRadius,
+          shadowOpacity,
+        },
+      ]}
+    />
+  );
+}
+
 export function OverlapGrid({
   rows,
   axisLabels,
@@ -555,12 +631,8 @@ export function OverlapGrid({
               {axisLabels.map((_, i) => {
                 const on = row.freeIndices.includes(i);
                 const shared = on && i === sharedIndex;
-                return (
-                  <View
-                    key={i}
-                    style={[styles.cell, on && styles.cellOn, shared && styles.cellShared]}
-                  />
-                );
+                if (shared) return <SharedNight key={i} />;
+                return <View key={i} style={[styles.cell, on && styles.cellOn]} />;
               })}
             </View>
           </View>
@@ -606,10 +678,12 @@ export function PlanBar({
   plan,
   onWherePress,
   directionsUrl,
+  whereOpen,
 }: {
   plan: string;
   onWherePress?: () => void;
   directionsUrl?: string;
+  whereOpen?: boolean;
 }) {
   return (
     <View style={styles.plan}>
@@ -625,11 +699,19 @@ export function PlanBar({
             Linking.openURL(directionsUrl).catch(() => {});
           }}
         >
-          <Text style={styles.planDirIcon}>◎</Text>
+          <Svg width={16} height={16} viewBox="0 0 24 24">
+            <Path
+              d="M12 21s7-6.4 7-11a7 7 0 1 0-14 0c0 4.6 7 11 7 11z"
+              fill="none"
+              stroke={colors.lamp}
+              strokeWidth={1.6}
+            />
+            <Circle cx={12} cy={10} r={2.6} fill="none" stroke={colors.lamp} strokeWidth={1.6} />
+          </Svg>
         </Pressable>
       ) : null}
       <Pressable style={styles.planEdit} onPress={onWherePress}>
-        <Text style={styles.planEditText}>Where?</Text>
+        <Text style={styles.planEditText}>{whereOpen ? "Done" : "Where?"}</Text>
       </Pressable>
     </View>
   );
@@ -637,66 +719,75 @@ export function PlanBar({
 
 type PlaceVote = { name: string; votes: number; mine: boolean };
 
+const PLACE_STANDINS = [
+  { name: "The Anchor", subtitle: "Bar · Caroline St" },
+  { name: "Hattie's", subtitle: "Southern · Phila St" },
+  { name: "Bar Nostra", subtitle: "Wine bar · Broadway" },
+  { name: "Druthers Brewing", subtitle: "Brewpub · Broadway" },
+  { name: "Boca Bistro", subtitle: "Spanish · Broadway" },
+  { name: "Nine Miles East", subtitle: "Pizza · Church St" },
+];
+
 export function PlacePicker({
-  area = "Saratoga Springs",
-  onPin,
+  area,
+  places,
+  onVote,
+  onArea,
 }: {
-  area?: string;
-  onPin: (placeName: string) => void;
+  area: string;
+  places: PlaceVote[];
+  onVote: (name: string | null) => void;
+  onArea: (area: string) => void;
 }) {
-  const [places, setPlaces] = useState<PlaceVote[]>([
-    { name: "The Anchor", votes: 2, mine: false },
-    { name: "Bar Nostra", votes: 1, mine: false },
-    { name: "Wherever's open", votes: 0, mine: false },
-  ]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<{ name: string; subtitle: string }[]>([]);
+  const [searched, setSearched] = useState(false);
+  const [editingArea, setEditingArea] = useState(false);
+  const [areaDraft, setAreaDraft] = useState(area);
 
-  function togglePlace(index: number) {
-    setPlaces((prev) => {
-      const next = prev.map((p, i) => {
-        if (i !== index) return { ...p, mine: false };
-        if (p.mine) return { ...p, mine: false, votes: Math.max(0, p.votes - 1) };
-        return { ...p, mine: true, votes: p.votes + 1 };
-      });
-      const top = [...next].sort((a, b) => b.votes - a.votes)[0];
-      if (top && top.votes > 0 && top.name.toLowerCase() !== "wherever's open") {
-        onPin(top.name);
-      }
-      return next;
-    });
-  }
+  useEffect(() => {
+    if (!editingArea) setAreaDraft(area);
+  }, [area, editingArea]);
 
-  function search() {
-    const q = query.trim().toLowerCase();
+  function search(text = query) {
+    const q = text.trim().toLowerCase();
     if (!q) {
       setResults([]);
+      setSearched(false);
       return;
     }
-    setResults([
-      { name: "The Anchor", subtitle: "Pub · downtown" },
-      { name: "Anchor Brewing Hall", subtitle: "Bar · 0.4 mi" },
-    ].filter((r) => r.name.toLowerCase().includes(q)));
+    setSearched(true);
+    setResults(
+      PLACE_STANDINS.filter((place) =>
+        `${place.name} ${place.subtitle}`.toLowerCase().includes(q),
+      ).slice(0, 4),
+    );
   }
 
   function addResult(name: string) {
-    setPlaces((prev) => {
-      if (prev.some((p) => p.name === name)) return prev;
-      return [...prev, { name, votes: 1, mine: true }];
-    });
-    onPin(name);
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onVote(trimmed);
     setQuery("");
     setResults([]);
+    setSearched(false);
+  }
+
+  function commitArea() {
+    const next = areaDraft.trim();
+    setEditingArea(false);
+    if (next && next !== area) onArea(next);
+    else setAreaDraft(area);
   }
 
   return (
     <View style={styles.pick}>
       <Text style={styles.pickH}>Where are we going?</Text>
       <View style={styles.pickList}>
-        {places.map((place, i) => (
+        {places.map((place) => (
           <Pressable
             key={place.name}
-            onPress={() => togglePlace(i)}
+            onPress={() => onVote(place.mine ? null : place.name)}
             style={[styles.pickOpt, place.mine && styles.pickOptOn]}
           >
             <Text style={styles.pickName}>{place.name}</Text>
@@ -707,38 +798,113 @@ export function PlacePicker({
       <View style={styles.pickAdd}>
         <TextInput
           value={query}
-          onChangeText={setQuery}
+          onChangeText={(text) => {
+            setQuery(text);
+            search(text);
+          }}
           placeholder="Search a bar or restaurant"
           placeholderTextColor={colors.dim}
           style={styles.pickField}
-          onSubmitEditing={search}
+          onSubmitEditing={() => search()}
         />
-        <Pressable onPress={search} style={styles.pickGo}>
+        <Pressable onPress={() => search()} style={styles.pickGo}>
           <Text style={styles.pickGoText}>→</Text>
         </Pressable>
       </View>
       <View style={styles.pickArea}>
         <Text style={styles.pickAreaText}>Searching </Text>
-        <Text style={styles.pickAreaBtn}>{area}</Text>
+        {editingArea ? (
+          <TextInput
+            value={areaDraft}
+            onChangeText={setAreaDraft}
+            onBlur={commitArea}
+            onSubmitEditing={commitArea}
+            autoFocus
+            maxLength={40}
+            style={styles.pickAreaField}
+          />
+        ) : (
+          <Pressable onPress={() => setEditingArea(true)} accessibilityLabel="Change area">
+            <Text style={styles.pickAreaBtn}>{area}</Text>
+          </Pressable>
+        )}
         <Text style={styles.pickAreaNote}> · set once, per group</Text>
       </View>
-      {results.length > 0 ? (
+      {searched ? (
         <View style={styles.pickRes}>
           <Text style={styles.pickResH}>Results</Text>
-          {results.map((r) => (
-            <Pressable key={r.name} onPress={() => addResult(r.name)} style={styles.pickR}>
-              <View style={styles.pickRb}>
-                <Text style={styles.pickRn}>{r.name}</Text>
-                <Text style={styles.pickRs}>{r.subtitle}</Text>
-              </View>
-              <Text style={styles.pickRadd}>+</Text>
-            </Pressable>
-          ))}
+          {results.length === 0 ? (
+            <>
+              <Text style={styles.pickRs}>Nothing in {area}.</Text>
+              <Pressable onPress={() => addResult(query.trim())} style={styles.pickR}>
+                <View style={styles.pickRb}>
+                  <Text style={styles.pickRn}>{query.trim()}</Text>
+                  <Text style={styles.pickRs}>Add it anyway</Text>
+                </View>
+                <Text style={styles.pickRadd}>+</Text>
+              </Pressable>
+            </>
+          ) : (
+            results.map((r) => (
+              <Pressable key={r.name} onPress={() => addResult(r.name)} style={styles.pickR}>
+                <View style={styles.pickRb}>
+                  <Text style={styles.pickRn}>{r.name}</Text>
+                  <Text style={styles.pickRs}>{r.subtitle}</Text>
+                </View>
+                <Text style={styles.pickRadd}>+</Text>
+              </Pressable>
+            ))
+          )}
           <Text style={styles.pickAttr}>Places data · Google</Text>
         </View>
       ) : null}
       <Text style={styles.pickF}>Tap one to say you're up for it. Most taps gets pinned.</Text>
     </View>
+  );
+}
+
+const WAVE = [5, 11, 7, 14, 8, 12, 6, 15, 9, 11, 5];
+
+export function VoiceBubble({
+  durationMs,
+  from,
+  mine,
+  grouped,
+  playing,
+  onPress,
+}: {
+  durationMs: number;
+  from?: string;
+  mine?: boolean;
+  grouped?: boolean;
+  playing?: boolean;
+  onPress: () => void;
+}) {
+  const total = Math.max(1, Math.round(durationMs / 1000));
+  const label = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityLabel={`Voice note ${label}`}
+      style={[styles.msg, mine ? styles.msgMe : styles.msgThem, grouped && styles.msgGrouped]}
+    >
+      {from && !mine ? <Text style={styles.msgFrom}>{from}</Text> : null}
+      <View style={styles.voiceRow}>
+        <View style={styles.voiceBars}>
+          {WAVE.map((h, i) => (
+            <View
+              key={i}
+              style={[
+                styles.voiceBar,
+                { height: h },
+                { backgroundColor: playing ? colors.lamp : mine ? colors.ink : colors.chalk },
+              ]}
+            />
+          ))}
+        </View>
+        <Text style={[styles.voiceLen, mine && styles.msgBodyMe]}>{label}</Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -783,36 +949,74 @@ export function QuickChips({
   );
 }
 
+const micPulse =
+  Platform.OS === "web"
+    ? ({
+        animationName: "sua-mic",
+        animationDuration: "1.4s",
+        animationIterationCount: "infinite",
+        animationTimingFunction: "ease-in-out",
+      } as object)
+    : null;
+
 export function Composer({
   value,
   onChange,
   onSend,
   ready,
+  recording,
+  onMic,
+  hint,
 }: {
   value: string;
   onChange: (v: string) => void;
   onSend: () => void;
   ready: boolean;
+  recording?: boolean;
+  onMic?: () => void;
+  hint?: string | null;
 }) {
+  ensureBreathe();
   return (
-    <View style={styles.composer}>
-      <View style={styles.mic}>
-        <Text style={styles.micIcon}>🎤</Text>
-      </View>
+    <View>
+      {hint ? <Text style={styles.composerHint}>{hint}</Text> : null}
+      <View style={styles.composer}>
+      <Pressable
+        onPress={onMic}
+        accessibilityLabel={recording ? "Stop voice note" : "Voice note"}
+        style={[styles.mic, recording && styles.micOn, recording && micPulse]}
+      >
+        <Svg width={15} height={15} viewBox="0 0 24 24">
+          <Path d="M8 5a4 4 0 0 1 8 0v7a4 4 0 0 1-8 0z" fill={recording ? colors.ink : colors.chalk} />
+          <Path
+            d="M5 11a1 1 0 0 1 2 0 5 5 0 0 0 10 0 1 1 0 0 1 2 0 7 7 0 0 1-6 6.9V21h-2v-3.1A7 7 0 0 1 5 11z"
+            fill={recording ? colors.ink : colors.chalk}
+          />
+        </Svg>
+      </Pressable>
       <TextInput
         value={value}
         onChangeText={onChange}
         placeholder="Message"
         placeholderTextColor={colors.dim}
         style={styles.composerField}
+        onSubmitEditing={() => {
+          if (ready) onSend();
+        }}
       />
       <Pressable
         onPress={onSend}
         disabled={!ready}
         style={[styles.send, ready && styles.sendReady]}
       >
-        <Text style={[styles.sendIcon, ready && styles.sendIconReady]}>➤</Text>
+        <Svg width={15} height={15} viewBox="0 0 24 24">
+          <Path
+            d="M3 20.5 21 12 3 3.5 3 10l12 2-12 2z"
+            fill={ready ? colors.ink : colors.muted}
+          />
+        </Svg>
       </Pressable>
+      </View>
     </View>
   );
 }
@@ -891,7 +1095,7 @@ const styles = StyleSheet.create({
   },
   btn: {
     width: "100%",
-    borderRadius: radius.lg,
+    borderRadius: radius.pill,
     paddingVertical: 16,
     paddingHorizontal: 16,
     alignItems: "center",
@@ -1552,7 +1756,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  micIcon: { fontSize: 14 },
+  micOn: { backgroundColor: colors.lamp },
+  composerHint: {
+    fontFamily: fonts.body,
+    fontSize: 12.5,
+    color: colors.dim,
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  voiceRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  voiceBars: { flexDirection: "row", alignItems: "center", gap: 2, height: 16 },
+  voiceBar: { width: 2, borderRadius: 1 },
+  voiceLen: { fontFamily: fonts.mono, fontSize: 12, color: colors.chalk },
+  pickAreaField: {
+    minWidth: 120,
+    fontFamily: fonts.body,
+    fontSize: 12.5,
+    color: colors.lamp,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.lamp,
+    paddingVertical: 0,
+    paddingHorizontal: 2,
+  },
   composerField: {
     flex: 1,
     fontFamily: fonts.body,
@@ -1570,8 +1795,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   sendReady: { backgroundColor: colors.lamp },
-  sendIcon: { color: colors.chalk, fontSize: 14 },
-  sendIconReady: { color: colors.ink },
   quietHit: {
     minHeight: 44,
     justifyContent: "center",
@@ -1666,7 +1889,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.dangerBg,
     borderWidth: 1,
     borderColor: colors.dangerBorder,
-    borderRadius: radius.md,
+    borderRadius: radius.pill,
     paddingVertical: 11,
     alignItems: "center",
   },
