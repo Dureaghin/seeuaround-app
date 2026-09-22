@@ -33,6 +33,8 @@ import { query, withTransaction } from "../db.js";
 import { buildMeState, runMatchingForUser } from "../me-state.js";
 import { queueNotification } from "../push.js";
 import { config, getDevAuthCode } from "../config.js";
+import { searchPlaces } from "../places.js";
+import { z } from "zod";
 import { computePauseUntil, isValidTimezone } from "../pause-until.js";
 
 const AUTH_SEND_CODE_LIMIT = {
@@ -58,6 +60,15 @@ const MESSAGE_LIMIT = {
 const INVITE_PREVIEW_LIMIT = {
   config: { rateLimit: { max: 30, timeWindow: "15 minutes" } },
 };
+
+const PLACE_SEARCH_LIMIT = {
+  config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
+};
+
+const PlaceSearchSchema = z.object({
+  q: z.string().trim().min(1).max(80),
+  area: z.string().trim().min(1).max(40),
+});
 
 const GENERIC_AUTH_MSG = {
   ok: true,
@@ -721,8 +732,30 @@ export async function registerRoutes(app: FastifyInstance) {
        ORDER BY (u.id = $2) DESC, u.first_name`,
       [id, request.user!.id],
     );
+    const night = overlapRows[0].night_date.slice(0, 10);
+    const [year, month, day] = night.split("-").map(Number);
+    const nightDate = new Date(year, month - 1, day);
+    const monday = new Date(nightDate);
+    monday.setDate(nightDate.getDate() - ((nightDate.getDay() + 6) % 7));
+    const weekDates = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(monday);
+      date.setDate(monday.getDate() + index);
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    });
+    const { rows: windows } = await query<{ user_id: string; date: string }>(
+      `SELECT user_id, to_char(lower(span) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date
+       FROM windows
+       WHERE user_id = ANY($1::uuid[])
+         AND to_char(lower(span) AT TIME ZONE 'UTC', 'YYYY-MM-DD') = ANY($2::text[])`,
+      [members.map((member) => member.id), weekDates],
+    );
+    const freeByUser = new Map<string, string[]>();
+    for (const window of windows) {
+      const dates = freeByUser.get(window.user_id) ?? [];
+      dates.push(window.date);
+      freeByUser.set(window.user_id, dates);
+    }
     const my = members.find((m) => m.id === request.user!.id);
-    const [year, month, day] = overlapRows[0].night_date.slice(0, 10).split("-").map(Number);
 
     return {
       id,
@@ -737,6 +770,7 @@ export async function registerRoutes(app: FastifyInstance) {
         id: m.id,
         firstName: m.first_name,
         response: m.response,
+        freeDates: freeByUser.get(m.id) ?? [],
       })),
       myResponse: my?.response ?? null,
     };
@@ -876,6 +910,12 @@ export async function registerRoutes(app: FastifyInstance) {
     );
     if (!rows[0]) return reply.code(404).send({ error: "not_found" });
     return reply.type(rows[0].audio_type || "audio/webm").send(rows[0].audio);
+  });
+
+  app.post("/places/search", { preHandler: authHook, ...PLACE_SEARCH_LIMIT }, async (request, reply) => {
+    const parsed = PlaceSearchSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    return searchPlaces(parsed.data.q, parsed.data.area);
   });
 
   app.post("/threads/:id/vote", { preHandler: authHook }, async (request, reply) => {

@@ -1,6 +1,7 @@
 import { Expo, type ExpoPushMessage } from "expo-server-sdk";
 import { config } from "./config.js";
 import { query } from "./db.js";
+import { isLocalSundaySixPm } from "./pause-until.js";
 
 const expo = new Expo({ accessToken: config.expoAccessToken });
 
@@ -142,9 +143,8 @@ export async function queueNotification(input: {
 }
 
 export async function queueSundayPrompts() {
-  await query(
-    `INSERT INTO notifications (user_id, kind, title, body, data, scheduled_for)
-     SELECT u.id, 'sunday', 'This week', 'Which nights are you free?', jsonb_build_object('route', 'sunday'), now()
+  const { rows } = await query<{ id: string; timezone: string }>(
+    `SELECT u.id, u.timezone
      FROM users u
      WHERE u.paused = FALSE
        AND u.age_verified_at IS NOT NULL
@@ -156,9 +156,22 @@ export async function queueSundayPrompts() {
        AND NOT EXISTS (
          SELECT 1 FROM notifications n
          WHERE n.user_id = u.id AND n.kind = 'sunday'
-           AND n.created_at > date_trunc('week', now())
+           AND n.created_at > now() - interval '6 days'
        )`,
   );
+  const due = rows.filter((user) => isLocalSundaySixPm(user.timezone || "America/New_York"));
+  if (due.length === 0) return;
+  await query(
+    `INSERT INTO notifications (user_id, kind, title, body, data, scheduled_for)
+     SELECT id, 'sunday', 'This week', 'Which nights are you free?',
+            jsonb_build_object('route', 'sunday'), now()
+     FROM unnest($1::uuid[]) AS id`,
+    [due.map((user) => user.id)],
+  );
+}
+
+export async function purgeExpiredThreads() {
+  await query(`DELETE FROM threads WHERE expires_at <= now()`);
 }
 
 export { isInDeliveryWindow };

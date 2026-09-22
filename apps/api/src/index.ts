@@ -6,7 +6,7 @@ import { config, getDevAuthCode } from "./config.js";
 import { pool } from "./db.js";
 import { migrate } from "./migrate.js";
 import { registerRoutes } from "./routes/index.js";
-import { deliverPendingNotifications, queueSundayPrompts } from "./push.js";
+import { deliverPendingNotifications, purgeExpiredThreads, queueSundayPrompts } from "./push.js";
 
 async function main() {
   if (process.env.RUN_MIGRATIONS === "true") {
@@ -73,13 +73,15 @@ async function main() {
   if (process.env.DATABASE_URL) {
     boss = new PgBoss(process.env.DATABASE_URL);
     await boss.start();
-    for (const queue of ["deliver-notifications", "sunday-prompt"]) {
+    for (const queue of ["deliver-notifications", "sunday-prompt", "purge-threads"]) {
       await boss.createQueue(queue);
     }
     await boss.schedule("deliver-notifications", "*/5 * * * *", {}, { tz: "UTC" });
-    await boss.schedule("sunday-prompt", "0 18 * * 0", {}, { tz: "UTC" });
+    await boss.schedule("sunday-prompt", "*/15 * * * *", {}, { tz: "UTC" });
+    await boss.schedule("purge-threads", "20 * * * *", {}, { tz: "UTC" });
     await boss.work("deliver-notifications", deliverPendingNotifications);
     await boss.work("sunday-prompt", queueSundayPrompts);
+    await boss.work("purge-threads", purgeExpiredThreads);
   }
 
   const close = async () => {

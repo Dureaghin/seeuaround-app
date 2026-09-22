@@ -133,7 +133,7 @@ export const api = {
       nightDate: string;
       expiresAt: string;
       dateLabel: string;
-      members: { id: string; firstName: string; response: string | null }[];
+      members: { id: string; firstName: string; response: string | null; freeDates: string[] }[];
       myResponse: string | null;
     }>(`/overlaps/${id}`),
 
@@ -203,6 +203,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ area }),
     }),
+
+  searchPlaces: (q: string, area: string) =>
+    request<{ places: { name: string; subtitle: string }[]; source: "google" | "openstreetmap" }>(
+      "/places/search",
+      {
+        method: "POST",
+        body: JSON.stringify({ q, area }),
+      },
+    ),
 
   messageAudioUrl: async (threadId: string, messageId: string) => {
     const token = await getToken();

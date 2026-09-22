@@ -755,50 +755,63 @@ export function PlanBar({
 }
 
 type PlaceVote = { name: string; votes: number; mine: boolean };
-
-const PLACE_STANDINS = [
-  { name: "The Anchor", subtitle: "Bar · Caroline St" },
-  { name: "Hattie's", subtitle: "Southern · Phila St" },
-  { name: "Bar Nostra", subtitle: "Wine bar · Broadway" },
-  { name: "Druthers Brewing", subtitle: "Brewpub · Broadway" },
-  { name: "Boca Bistro", subtitle: "Spanish · Broadway" },
-  { name: "Nine Miles East", subtitle: "Pizza · Church St" },
-];
+type PlaceHit = { name: string; subtitle: string };
 
 export function PlacePicker({
   area,
   places,
   onVote,
   onArea,
+  onSearch,
 }: {
   area: string;
   places: PlaceVote[];
   onVote: (name: string | null) => void;
   onArea: (area: string) => void;
+  onSearch: (query: string, area: string) => Promise<{ places: PlaceHit[]; source: string }>;
 }) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<{ name: string; subtitle: string }[]>([]);
+  const [results, setResults] = useState<PlaceHit[]>([]);
   const [searched, setSearched] = useState(false);
+  const [source, setSource] = useState("openstreetmap");
   const [editingArea, setEditingArea] = useState(false);
   const [areaDraft, setAreaDraft] = useState(area);
+  const searchWait = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchSerial = useRef(0);
 
   useEffect(() => {
     if (!editingArea) setAreaDraft(area);
   }, [area, editingArea]);
 
+  useEffect(() => {
+    return () => {
+      if (searchWait.current) clearTimeout(searchWait.current);
+    };
+  }, []);
+
   function search(text = query) {
-    const q = text.trim().toLowerCase();
+    if (searchWait.current) clearTimeout(searchWait.current);
+    const q = text.trim();
     if (!q) {
       setResults([]);
       setSearched(false);
       return;
     }
-    setSearched(true);
-    setResults(
-      PLACE_STANDINS.filter((place) =>
-        `${place.name} ${place.subtitle}`.toLowerCase().includes(q),
-      ).slice(0, 4),
-    );
+    searchWait.current = setTimeout(() => {
+      const serial = ++searchSerial.current;
+      onSearch(q, area)
+        .then((found) => {
+          if (serial !== searchSerial.current) return;
+          setResults(found.places);
+          setSource(found.source);
+          setSearched(true);
+        })
+        .catch(() => {
+          if (serial !== searchSerial.current) return;
+          setResults([]);
+          setSearched(true);
+        });
+    }, 300);
   }
 
   function addResult(name: string) {
@@ -892,7 +905,9 @@ export function PlacePicker({
               </Pressable>
             ))
           )}
-          <Text style={styles.pickAttr}>Places data · Google</Text>
+          <Text style={styles.pickAttr}>
+            {source === "google" ? "Places data · Google" : "Places data · OpenStreetMap"}
+          </Text>
         </View>
       ) : null}
       <Text style={styles.pickF}>Tap one to say you're up for it. Most taps gets pinned.</Text>

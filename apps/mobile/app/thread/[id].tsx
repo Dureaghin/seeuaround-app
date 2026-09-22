@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { colors, fonts } from "../../src/lib/theme";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { api } from "../../src/lib/api";
 import { useApp } from "../../src/context/AppContext";
-import { playVoiceUrl, startVoiceRecording, stopVoicePlayback, type VoiceClip } from "../../src/lib/voice";
+import { playMessageAudio, startVoiceRecording, stopVoicePlayback, type VoiceClip } from "../../src/lib/voice";
 import {
   Composer,
   MessageBubble,
@@ -16,6 +17,18 @@ import {
 } from "../../src/components/ui";
 
 const VOICE_LIMIT_MS = 60_000;
+
+function messageTime(iso: string): string {
+  const date = new Date(iso);
+  const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  if (date.toDateString() === new Date().toDateString()) return time;
+  const day = date.toLocaleDateString("en-US", { weekday: "short" });
+  return `${day} ${time}`;
+}
+
+function sameBurst(a: string, b: string): boolean {
+  return Math.abs(new Date(a).getTime() - new Date(b).getTime()) < 2 * 60 * 1000;
+}
 
 type Thread = Awaited<ReturnType<typeof api.getThread>>;
 type Plan = Thread["plan"];
@@ -143,9 +156,8 @@ export default function ThreadScreen() {
       return;
     }
     try {
-      const url = await api.messageAudioUrl(id, messageId);
       setPlayingId(messageId);
-      await playVoiceUrl(url, () => {
+      await playMessageAudio(id, messageId, () => {
         setPlayingId((current) => (current === messageId ? null : current));
       });
     } catch {
@@ -195,21 +207,31 @@ export default function ThreadScreen() {
   const timeline = useMemo(() => {
     const meId = me?.user?.id;
     const items: (
-      | { kind: "text"; key: string; mine: boolean; from?: string; bodies: string[] }
-      | { kind: "voice"; key: string; mine: boolean; from?: string; durationMs: number }
+      | { kind: "text"; key: string; mine: boolean; from?: string; bodies: string[]; time: string }
+      | { kind: "voice"; key: string; mine: boolean; from?: string; durationMs: number; time: string }
     )[] = [];
     for (const m of thread?.messages ?? []) {
       const mine = m.userId === meId;
       const from = mine ? undefined : m.firstName || "Someone";
+      const time = messageTime(m.createdAt);
       if (m.durationMs) {
-        items.push({ kind: "voice", key: m.id, mine, from, durationMs: m.durationMs });
+        items.push({ kind: "voice", key: m.id, mine, from, durationMs: m.durationMs, time });
         continue;
       }
       const last = items[items.length - 1];
-      if (last && last.kind === "text" && last.mine === mine && last.from === from) {
+      const previous = thread?.messages.find((message) => message.id === last?.key);
+      if (
+        last &&
+        last.kind === "text" &&
+        last.mine === mine &&
+        last.from === from &&
+        previous &&
+        sameBurst(previous.createdAt, m.createdAt)
+      ) {
         last.bodies.push(m.body);
+        last.time = time;
       } else {
-        items.push({ kind: "text", key: m.id, mine, from, bodies: [m.body] });
+        items.push({ kind: "text", key: m.id, mine, from, bodies: [m.body], time });
       }
     }
     return items;
@@ -247,7 +269,13 @@ export default function ThreadScreen() {
       />
 
       {showPicker && plan ? (
-        <PlacePicker area={area} places={plan.places} onVote={vote} onArea={saveArea} />
+        <PlacePicker
+          area={area}
+          places={plan.places}
+          onVote={vote}
+          onArea={saveArea}
+          onSearch={(q, searchArea) => api.searchPlaces(q, searchArea)}
+        />
       ) : null}
 
       <View style={{ marginTop: 18, gap: 3 }}>
@@ -267,6 +295,7 @@ export default function ThreadScreen() {
                 playing={playingId === item.key}
                 onPress={() => play(item.key)}
               />
+              <Text style={styles.time}>{item.time}</Text>
             </View>
           ) : (
             <View
@@ -282,6 +311,7 @@ export default function ThreadScreen() {
                   grouped={bi > 0}
                 />
               ))}
+              <Text style={styles.time}>{item.time}</Text>
             </View>
           ),
         )}
@@ -290,3 +320,12 @@ export default function ThreadScreen() {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  time: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 2,
+  },
+});

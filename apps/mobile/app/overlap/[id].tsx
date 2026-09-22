@@ -18,14 +18,6 @@ import { Text } from "react-native";
 
 const AXIS = ["M", "T", "W", "T", "F", "S", "S"];
 
-function memberFreeIndices(memberId: string, sharedIndex: number): number[] {
-  let hash = 0;
-  for (const ch of memberId) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
-  const offsets = [0, 2, -1, 3];
-  const extra = (sharedIndex + offsets[Math.abs(hash) % offsets.length] + 7) % 7;
-  return [...new Set([sharedIndex, extra])].sort((a, b) => a - b);
-}
-
 export default function OverlapScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -48,11 +40,13 @@ export default function OverlapScreen() {
 
   const rows = useMemo(() => {
     if (!overlap) return [];
+    const dateIndex = new Map(myWeek.map((night, index) => [night.date, index]));
     return overlap.members.map((m) => {
       const isYou = m.id === me?.user?.id;
-      const freeIndices = isYou
-        ? myWeek.map((n, i) => (n.free ? i : -1)).filter((i) => i >= 0)
-        : memberFreeIndices(m.id, sharedIndex);
+      const freeIndices = (m.freeDates ?? [])
+        .map((date) => dateIndex.get(date.slice(0, 10)))
+        .filter((index): index is number => index !== undefined);
+      if (sharedIndex >= 0 && !freeIndices.includes(sharedIndex)) freeIndices.push(sharedIndex);
       return {
         label: isYou ? "You" : m.firstName,
         isYou,

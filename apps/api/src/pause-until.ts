@@ -47,6 +47,24 @@ export function computePauseUntil(until: PauseDuration, timezone: string): Date 
   return fallback;
 }
 
+/** Sunday from 6pm through 10pm in the person's own timezone. */
+export function isLocalSundaySixPm(timezone: string, at = new Date()): boolean {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      weekday: "short",
+      hour: "numeric",
+      hour12: false,
+    }).formatToParts(at);
+    const weekday = parts.find((part) => part.type === "weekday")?.value ?? "";
+    const hour = Number(parts.find((part) => part.type === "hour")?.value);
+    const normalized = hour === 24 ? 0 : hour;
+    return weekday.startsWith("Sun") && normalized >= 18 && normalized < 22;
+  } catch {
+    return false;
+  }
+}
+
 export function isValidTimezone(tz: string): boolean {
   try {
     Intl.DateTimeFormat(undefined, { timeZone: tz });
