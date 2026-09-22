@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { SITE } from "@seeuaround/shared";
+import { colors, fonts, spacing } from "../../src/lib/theme";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { api } from "../../src/lib/api";
 import { rememberAuthEmail } from "../../src/lib/auth-email";
@@ -12,14 +14,10 @@ import {
 import {
   Actions,
   Button,
-  Eyebrow,
-  Fineprint,
   Headline,
   Linkish,
   OptIn,
   Screen,
-  SmallPrint,
-  Spacer,
   Sub,
   TextField,
   uiStyles,
@@ -79,11 +77,8 @@ export default function EmailScreen() {
 
   return (
     <Screen showLogo>
-      <Eyebrow>Signing up</Eyebrow>
-      <Headline>What's your email?</Headline>
-      <Sub>
-        It signs you in, and it's how you get your circle back if you lose your phone.
-      </Sub>
+      <Headline style={styles.title}>What's your email?</Headline>
+      <Sub style={styles.sub}>Sign-in only. Friends never see it.</Sub>
 
       <TextField
         value={email}
@@ -91,6 +86,7 @@ export default function EmailScreen() {
         placeholder="you@example.com"
         keyboardType="email-address"
         autoCapitalize="none"
+        style={styles.field}
       />
 
       {showFriendCode ? (
@@ -101,38 +97,28 @@ export default function EmailScreen() {
             placeholder="SU-XXXX-XXXX"
             autoCapitalize="characters"
             maxLength={12}
+            style={styles.codeField}
           />
-          <Sub style={{ maxWidth: undefined, marginTop: 11 }}>
-            You'll connect with this person after you verify — not their whole circle.
-          </Sub>
+          <Sub style={styles.helper}>You'll connect after you verify.</Sub>
         </>
       ) : (
-        <View style={{ marginTop: 16 }}>
-          <Linkish label="Have a friend's code?" onPress={() => setShowFriendCode(true)} />
-        </View>
+        <Linkish
+          label="Have a friend's code?"
+          onPress={() => setShowFriendCode(true)}
+          style={styles.link}
+        />
       )}
-
-      <Fineprint
-        title="What we do with it"
-        items={[
-          { ok: true, text: "Send you a code. That's how you sign in — no password." },
-          { ok: true, text: "Get your circle back if you lose your phone." },
-          { ok: true, text: "Keep bulk fake signups down. One inbox, one account." },
-          { ok: false, text: "Never shown to your friends. They see your name, not this." },
-          { ok: false, text: "Never sold, never given to anyone." },
-        ]}
-      />
 
       <OptIn
         checked={optIn}
         onToggle={() => setOptIn((v) => !v)}
-        label="Email me when there's a new feature. Off unless you tick it — otherwise we only ever send a sign-in code."
+        label="Email me about new features."
+        style={styles.opt}
       />
 
-      {error ? <Text style={uiStyles.err}>{error}</Text> : null}
+      {error ? <Text style={[uiStyles.err, styles.err]}>{error}</Text> : null}
 
-      <Spacer />
-      <Actions>
+      <Actions style={styles.actions}>
         <Button
           label="Send me a code"
           onPress={onContinue}
@@ -140,7 +126,51 @@ export default function EmailScreen() {
           disabled={!email.includes("@")}
         />
       </Actions>
-      <SmallPrint>18+ only · By continuing you accept the terms</SmallPrint>
+      <View style={styles.legalRow}>
+        <Text style={styles.legal}>18+</Text>
+        <Text style={styles.legal}>·</Text>
+        <Pressable
+          onPress={() => Linking.openURL(`${SITE}/privacy`)}
+          hitSlop={8}
+          accessibilityRole="link"
+          accessibilityLabel="Privacy"
+        >
+          <Text style={styles.legalLink}>Privacy</Text>
+        </Pressable>
+      </View>
     </Screen>
   );
 }
+
+/** 8px rhythm: 8 inside a group, 16 for a related control, 24 before a new group, 32 before the commit. */
+const styles = StyleSheet.create({
+  title: { marginTop: spacing.xxl },
+  sub: { marginTop: spacing.sm, maxWidth: 320 },
+  field: { marginTop: spacing.xxl },
+  codeField: { marginTop: spacing.lg },
+  helper: { marginTop: spacing.sm, maxWidth: undefined },
+  link: { marginTop: spacing.lg, minHeight: 44, justifyContent: "center" },
+  opt: { marginTop: spacing.xxl, minHeight: 44, alignItems: "center" },
+  err: { marginTop: spacing.md },
+  actions: { marginTop: 32 },
+  legalRow: {
+    marginTop: spacing.md,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+  },
+  legal: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.dim,
+  },
+  legalLink: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.chalk,
+    textDecorationLine: "underline",
+  },
+});

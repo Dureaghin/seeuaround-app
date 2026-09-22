@@ -97,6 +97,8 @@ export async function buildMeState(user: AuthedUser): Promise<MeState> {
 
   if (!user.ageVerified) {
     route = "age";
+  } else if (!user.nameSet) {
+    route = "name";
   } else if (pendingConnectionId) {
     route = "accept";
     routeParams.id = pendingConnectionId;

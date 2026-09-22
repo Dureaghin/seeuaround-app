@@ -10,7 +10,9 @@
   ],
   "scripts": {
     "dev:api": "npm run dev -w @seeuaround/api",
+    "dev:api:local": "cd apps/api && node --env-file=.env ../../node_modules/.bin/tsx watch src/index.ts",
     "dev:mobile": "npm run start -w @seeuaround/mobile",
+    "dev:web": "EXPO_PUBLIC_API_URL=http://localhost:3003 npm run web -w @seeuaround/mobile",
     "build:api": "npm run build -w @seeuaround/shared && npm run build -w @seeuaround/api",
     "migrate": "npm run migrate -w @seeuaround/api",
     "typecheck": "npm run typecheck -w @seeuaround/mobile && npm run typecheck -w @seeuaround/api"

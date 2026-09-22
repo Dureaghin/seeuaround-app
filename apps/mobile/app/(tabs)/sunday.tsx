@@ -51,7 +51,7 @@ export default function SundayScreen() {
   }
 
   const litCount = nights.filter((n) => n.free).length;
-  const eyebrow = me?.weekSet ? "Sunday" : "Sunday · 6:04 PM";
+  const eyebrow = me?.weekSet ? "This week" : "Sunday";
 
   return (
     <Screen>

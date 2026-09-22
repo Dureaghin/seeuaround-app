@@ -11,9 +11,11 @@ import {
   View,
   type TextInput as TextInputType,
 } from "react-native";
-import { useSegments } from "expo-router";
+import { useSegments, useIsFocused } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
+import QRCode from "react-native-qrcode-svg";
+import { AmbientBackground } from "./AmbientBackground";
 import { BrandLockup } from "./Logo";
 import { TAB_BAR_HEIGHT } from "./AppTabBar";
 import { colors, fonts, radius, spacing } from "../lib/theme";
@@ -28,24 +30,34 @@ export function Screen({
   bare?: boolean;
 }) {
   const segments = useSegments();
+  const focused = useIsFocused();
   const insets = useSafeAreaInsets();
   const inTabs = segments[0] === "(tabs)";
   const paddingBottom = inTabs
     ? TAB_BAR_HEIGHT + Math.max(insets.bottom, spacing.screenBottom)
     : spacing.screenBottom;
 
+  // Inactive tab scenes stay mounted on web and stack under the active one.
+  // An empty opaque shell stops their type from bleeding through transparent scroll areas.
+  if (!focused) {
+    return <View style={styles.screenRoot} />;
+  }
+
   return (
-    <ScrollView
-      style={styles.screenScroll}
-      contentContainerStyle={[
-        bare ? styles.bareContent : styles.screenContent,
-        { paddingBottom },
-      ]}
-      keyboardShouldPersistTaps="handled"
-    >
-      {showLogo && !bare ? <BrandLockup /> : null}
-      {children}
-    </ScrollView>
+    <View style={styles.screenRoot}>
+      <AmbientBackground />
+      <ScrollView
+        style={styles.screenScroll}
+        contentContainerStyle={[
+          bare ? styles.bareContent : styles.screenContent,
+          { paddingBottom },
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
+        {showLogo && !bare ? <BrandLockup /> : null}
+        {children}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -57,16 +69,16 @@ export function Eyebrow({ children, lamp }: { children: React.ReactNode; lamp?: 
   return <Text style={[styles.eyebrow, lamp && styles.eyebrowLamp]}>{children}</Text>;
 }
 
-export function Headline({ children }: { children: React.ReactNode }) {
-  return <Text style={styles.headline}>{children}</Text>;
+export function Headline({ children, style }: { children: React.ReactNode; style?: object }) {
+  return <Text style={[styles.headline, style]}>{children}</Text>;
 }
 
 export function Sub({ children, style }: { children: React.ReactNode; style?: object }) {
   return <Text style={[styles.sub, style]}>{children}</Text>;
 }
 
-export function SmallPrint({ children }: { children: React.ReactNode }) {
-  return <Text style={styles.smallprint}>{children}</Text>;
+export function SmallPrint({ children, style }: { children: React.ReactNode; style?: object }) {
+  return <Text style={[styles.smallprint, style]}>{children}</Text>;
 }
 
 export function Button({
@@ -92,7 +104,9 @@ export function Button({
         styles.btn,
         variant === "ghost" && styles.btnGhost,
         variant === "danger" && styles.btnDanger,
-        (disabled || loading || pressed) && styles.btnPressed,
+        disabled && !loading && variant === "solid" && styles.btnDisabled,
+        disabled && !loading && variant !== "solid" && styles.btnDisabledSoft,
+        !disabled && (loading || pressed) && styles.btnPressed,
         style,
       ]}
     >
@@ -104,6 +118,7 @@ export function Button({
             styles.btnText,
             variant === "ghost" && styles.btnTextGhost,
             variant === "danger" && styles.btnTextDanger,
+            disabled && styles.btnTextDisabled,
           ]}
         >
           {label}
@@ -125,12 +140,23 @@ export function Actions({
   return <View style={[styles.actions, row && styles.actionsRow, style]}>{children}</View>;
 }
 
+/** Solid panel over the ambient ground — use for lists, meta, and dense type. */
+export function Panel({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: object;
+}) {
+  return <View style={[styles.panel, style]}>{children}</View>;
+}
+
 export function TextField(props: {
   value: string;
   onChangeText: (v: string) => void;
   placeholder: string;
   keyboardType?: "default" | "email-address" | "number-pad";
-  autoCapitalize?: "none" | "sentences" | "characters";
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
   maxLength?: number;
   style?: object;
 }) {
@@ -233,13 +259,15 @@ export function OptIn({
   checked,
   onToggle,
   label,
+  style,
 }: {
   checked: boolean;
   onToggle: () => void;
   label: string;
+  style?: object;
 }) {
   return (
-    <Pressable onPress={onToggle} style={styles.optin}>
+    <Pressable onPress={onToggle} style={[styles.optin, style]}>
       <View style={[styles.optinBox, checked && styles.optinBoxOn]}>
         {checked ? <Text style={styles.optinCheck}>✓</Text> : null}
       </View>
@@ -345,29 +373,47 @@ export function CodeCard({
   copiedLabel = "Copied",
   copied = false,
   onCopy,
+  qrValue,
 }: {
   children: React.ReactNode;
   copyLabel?: string;
   copiedLabel?: string;
   copied?: boolean;
   onCopy?: () => void;
+  /** When set, a scannable QR sits beside the code (e.g. deep link to add-by-code). */
+  qrValue?: string;
 }) {
   return (
     <View style={styles.codeCard}>
-      {children}
-      {onCopy ? (
-        <Pressable
-          onPress={onCopy}
-          style={[styles.copy, copied && styles.copyCopied]}
-          accessibilityRole="button"
-          accessibilityLabel={copied ? copiedLabel : copyLabel}
-          accessibilityState={{ disabled: copied }}
-        >
-          <Text style={[styles.copyText, copied && styles.copyTextCopied]}>
-            {copied ? copiedLabel : copyLabel}
-          </Text>
-        </Pressable>
-      ) : null}
+      <View style={styles.codeCardRow}>
+        {qrValue ? (
+          <View style={styles.qrPad} accessibilityLabel="QR code for this invite code">
+            <QRCode
+              value={qrValue}
+              size={84}
+              color={colors.ink}
+              backgroundColor={colors.chalk}
+              ecl="M"
+            />
+          </View>
+        ) : null}
+        <View style={styles.codeCardBody}>
+          {children}
+          {onCopy ? (
+            <Pressable
+              onPress={onCopy}
+              style={[styles.copy, copied && styles.copyCopied]}
+              accessibilityRole="button"
+              accessibilityLabel={copied ? copiedLabel : copyLabel}
+              accessibilityState={{ disabled: copied }}
+            >
+              <Text style={[styles.copyText, copied && styles.copyTextCopied]}>
+                {copied ? copiedLabel : copyLabel}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
     </View>
   );
 }
@@ -406,12 +452,14 @@ export function PersonRow({
   nudge,
   nudged,
   onNudge,
+  onRemove,
 }: {
   name: string;
   free?: boolean;
   nudge?: boolean;
   nudged?: boolean;
   onNudge?: () => void;
+  onRemove?: () => void;
 }) {
   return (
     <View style={styles.person}>
@@ -419,6 +467,11 @@ export function PersonRow({
       <Text style={[styles.personName, free ? styles.personNameFree : styles.personNameDim]}>
         {name}
       </Text>
+      {onRemove ? (
+        <Pressable onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${name}`}>
+          <Text style={styles.removeText}>Remove</Text>
+        </Pressable>
+      ) : null}
       {nudge ? (
         <Pressable
           onPress={onNudge}
@@ -773,9 +826,17 @@ export function QuietLink({ label, onPress }: { label: string; onPress: () => vo
   );
 }
 
-export function Linkish({ label, onPress }: { label: string; onPress: () => void }) {
+export function Linkish({
+  label,
+  onPress,
+  style,
+}: {
+  label: string;
+  onPress: () => void;
+  style?: object;
+}) {
   return (
-    <Pressable onPress={onPress}>
+    <Pressable onPress={onPress} style={style}>
       <Text style={styles.linkish}>{label}</Text>
     </Pressable>
   );
@@ -786,7 +847,8 @@ export function ErrText({ children }: { children: React.ReactNode }) {
 }
 
 const styles = StyleSheet.create({
-  screenScroll: { flex: 1, backgroundColor: colors.night },
+  screenRoot: { flex: 1, backgroundColor: colors.night, overflow: "hidden" },
+  screenScroll: { flex: 1, backgroundColor: "transparent", zIndex: 1 },
   screenContent: {
     flexGrow: 1,
     paddingHorizontal: spacing.screenX,
@@ -837,25 +899,38 @@ const styles = StyleSheet.create({
     backgroundColor: colors.lamp,
   },
   btnGhost: {
-    backgroundColor: "transparent",
+    backgroundColor: colors.panel,
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: colors.lineStrong,
   },
   btnDanger: {
-    backgroundColor: "transparent",
+    backgroundColor: colors.dangerBg,
     borderWidth: 1,
-    borderColor: "rgba(224,110,90,0.35)",
+    borderColor: colors.dangerBorder,
   },
   btnPressed: { opacity: 0.88 },
+  btnDisabled: { backgroundColor: colors.surface2 },
+  btnDisabledSoft: { opacity: 0.45 },
+  btnTextDisabled: { color: colors.muted },
   btnText: {
     fontFamily: fonts.bodySemi,
     fontSize: 15,
     color: colors.ink,
   },
-  btnTextGhost: { color: colors.dim },
+  btnTextGhost: { color: colors.chalk },
   btnTextDanger: { color: colors.danger },
   actions: { gap: 9, marginTop: 16 },
   actionsRow: { flexDirection: "row" },
+  panel: {
+    marginTop: 16,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radius.xl,
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 14,
+  },
   tinput: {
     width: "100%",
     backgroundColor: colors.surface,
@@ -900,12 +975,12 @@ const styles = StyleSheet.create({
   },
   otpFocused: {
     borderColor: colors.lamp,
-    backgroundColor: "rgba(243,194,103,0.07)",
+    backgroundColor: "rgba(223,139,50,0.07)",
   },
   otpCellError: {
-    borderColor: "rgba(224,110,90,0.65)",
+    borderColor: "rgba(217,105,79,0.65)",
   },
-  otpFilled: { borderColor: "rgba(243,194,103,0.4)" },
+  otpFilled: { borderColor: "rgba(223,139,50,0.4)" },
   fineprint: {
     backgroundColor: colors.fineprintBg,
     borderRadius: 13,
@@ -932,29 +1007,28 @@ const styles = StyleSheet.create({
   },
   optin: { flexDirection: "row", gap: 11, marginTop: 18, alignItems: "flex-start" },
   optinBox: {
-    width: 19,
-    height: 19,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: colors.line,
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    borderColor: colors.lineStrong,
     backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 1,
   },
   optinBoxOn: { backgroundColor: colors.lamp, borderColor: colors.lamp },
-  optinCheck: { color: colors.ink, fontSize: 11, fontWeight: "700" },
+  optinCheck: { color: colors.ink, fontSize: 14, fontWeight: "700" },
   optinText: {
     flex: 1,
     fontFamily: fonts.body,
-    fontSize: 12.5,
-    lineHeight: 19,
-    color: colors.dim,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.chalk,
   },
   devcheck: {
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: "rgba(243,194,103,0.30)",
+    borderColor: "rgba(223,139,50,0.30)",
     borderRadius: radius.lg,
     padding: 17,
     marginTop: 24,
@@ -993,7 +1067,7 @@ const styles = StyleSheet.create({
   },
   choiceOn: {
     borderColor: colors.lamp,
-    backgroundColor: "rgba(243,194,103,0.07)",
+    backgroundColor: "rgba(223,139,50,0.07)",
   },
   choiceT: { fontFamily: fonts.bodyMedium, fontSize: 14.5, color: colors.chalk },
   choiceTOn: { color: colors.lamp },
@@ -1066,25 +1140,40 @@ const styles = StyleSheet.create({
     color: colors.dim,
   },
   codeCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.panel,
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: colors.lineStrong,
     borderRadius: radius.xl,
     padding: 19,
     marginTop: 20,
+  },
+  codeCardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
+  codeCardBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  qrPad: {
+    padding: 8,
+    borderRadius: radius.md,
+    backgroundColor: colors.chalk,
   },
   copy: {
     alignSelf: "flex-start",
     marginTop: 13,
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: colors.lineStrong,
     borderRadius: radius.pill,
     paddingVertical: 7,
     paddingHorizontal: 13,
+    backgroundColor: "rgba(250,247,242,0.04)",
   },
   copyCopied: {
     borderColor: colors.lamp,
-    backgroundColor: "rgba(243,194,103,0.07)",
+    backgroundColor: "rgba(223,139,50,0.12)",
   },
   copyText: {
     fontFamily: fonts.mono,
@@ -1100,20 +1189,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     gap: 12,
-    paddingVertical: 10,
+    paddingVertical: 11,
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
   },
-  linkctlK: { fontFamily: fonts.body, fontSize: 12.5, color: colors.dim },
+  linkctlK: { fontFamily: fonts.body, fontSize: 13, color: colors.dim },
   linkctlV: {
     fontFamily: fonts.mono,
-    fontSize: 11,
+    fontSize: 11.5,
     color: colors.chalk,
     textAlign: "right",
     flexShrink: 1,
   },
   pips: { flexDirection: "row", gap: 8, marginTop: 24 },
-  pip: { flex: 1, height: 5, borderRadius: 3, backgroundColor: colors.pane },
+  pip: { flex: 1, height: 5, borderRadius: 3, backgroundColor: "rgba(250,247,242,0.14)" },
   pipOn: { backgroundColor: colors.lamp },
   pipLabel: {
     fontFamily: fonts.mono,
@@ -1137,7 +1226,7 @@ const styles = StyleSheet.create({
   dotFree: {
     backgroundColor: colors.lamp,
     ...Platform.select({
-      web: { boxShadow: "0 0 5.5px rgba(243,194,103,0.75)" },
+      web: { boxShadow: "0 0 5.5px rgba(223,139,50,0.75)" },
       default: {
         shadowColor: colors.lamp,
         shadowOpacity: 0.75,
@@ -1165,6 +1254,13 @@ const styles = StyleSheet.create({
   },
   nudgeDone: { borderColor: colors.line, opacity: 0.55 },
   nudgeTextDone: { color: colors.muted },
+  removeText: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    color: colors.muted,
+  },
   strip: { flexDirection: "row", gap: 8, marginTop: 28, height: 244 },
   night: { flex: 1, gap: 7, flexDirection: "column" },
   pane: {
@@ -1172,7 +1268,7 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     backgroundColor: colors.pane,
     borderWidth: 1,
-    borderColor: "rgba(232,230,225,0.05)",
+    borderColor: "rgba(250,247,242,0.05)",
     justifyContent: "space-evenly",
     paddingVertical: 9,
     paddingHorizontal: 5,
@@ -1181,12 +1277,12 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 7,
     borderWidth: 1,
-    borderColor: "rgba(255,233,184,0.55)",
+    borderColor: "rgba(247,213,154,0.55)",
     justifyContent: "space-evenly",
     paddingVertical: 9,
     paddingHorizontal: 5,
     ...Platform.select({
-      web: { boxShadow: "0 0 11px rgba(243,194,103,0.3)" },
+      web: { boxShadow: "0 0 11px rgba(223,139,50,0.3)" },
       default: {
         shadowColor: colors.lamp,
         shadowOpacity: 0.3,
@@ -1195,8 +1291,8 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  sash: { height: 1, backgroundColor: "rgba(232,230,225,0.06)" },
-  sashLit: { height: 1, backgroundColor: "rgba(58,38,4,0.22)" },
+  sash: { height: 1, backgroundColor: "rgba(250,247,242,0.06)" },
+  sashLit: { height: 1, backgroundColor: "rgba(158,83,20,0.22)" },
   nightLabel: {
     fontFamily: fonts.mono,
     fontSize: 11,
@@ -1277,7 +1373,7 @@ const styles = StyleSheet.create({
   planV: { fontFamily: fonts.bodyMedium, fontSize: 14.5, color: colors.chalk, marginTop: 4 },
   planEdit: {
     borderWidth: 1,
-    borderColor: "rgba(243,194,103,0.35)",
+    borderColor: "rgba(223,139,50,0.35)",
     borderRadius: radius.pill,
     paddingVertical: 6,
     paddingHorizontal: 11,
@@ -1294,7 +1390,7 @@ const styles = StyleSheet.create({
     height: 34,
     borderRadius: 17,
     borderWidth: 1,
-    borderColor: "rgba(243,194,103,0.35)",
+    borderColor: "rgba(223,139,50,0.35)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1328,8 +1424,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
   },
   pickOptOn: {
-    borderColor: "rgba(243,194,103,0.5)",
-    backgroundColor: "rgba(243,194,103,0.08)",
+    borderColor: "rgba(223,139,50,0.5)",
+    backgroundColor: "rgba(223,139,50,0.08)",
   },
   pickName: { flex: 1, fontFamily: fonts.body, fontSize: 14, color: colors.chalk },
   pickN: { fontFamily: fonts.mono, fontSize: 11, color: colors.dim },
@@ -1366,7 +1462,7 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
     textDecorationStyle: "dashed",
   },
-  pickAreaNote: { fontFamily: fonts.body, fontSize: 12.5, color: "#4A4E56" },
+  pickAreaNote: { fontFamily: fonts.body, fontSize: 12.5, color: colors.muted },
   pickRes: { marginTop: 12, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 12 },
   pickResH: {
     fontFamily: fonts.mono,
@@ -1391,7 +1487,7 @@ const styles = StyleSheet.create({
   pickAttr: {
     fontFamily: fonts.mono,
     fontSize: 9,
-    color: "#4A4E56",
+    color: colors.muted,
     marginTop: 10,
     letterSpacing: 0.54,
   },
@@ -1499,6 +1595,11 @@ const styles = StyleSheet.create({
     color: colors.lamp,
     textDecorationLine: "underline",
   },
+  peopleSep: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    color: colors.muted,
+  },
   err: { fontFamily: fonts.body, fontSize: 13, color: colors.danger, marginTop: 14 },
   quiethours: {
     fontFamily: fonts.mono,
@@ -1538,6 +1639,20 @@ const styles = StyleSheet.create({
   },
   codelinkH: { fontFamily: fonts.mono, fontSize: 15, lineHeight: 23, color: colors.dim },
   codelinkT: { fontFamily: fonts.mono, fontSize: 15, lineHeight: 23, color: colors.lamp },
+  inviteNote: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 20,
+    color: colors.dim,
+    marginTop: 12,
+    maxWidth: 280,
+  },
+  inviteOffTitle: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14.5,
+    color: colors.chalk,
+    marginBottom: 4,
+  },
   codeMono: {
     fontFamily: fonts.mono,
     fontSize: 24,
@@ -1547,14 +1662,14 @@ const styles = StyleSheet.create({
   linkctlKill: {
     width: "100%",
     marginTop: 13,
-    backgroundColor: "transparent",
+    backgroundColor: colors.dangerBg,
     borderWidth: 1,
-    borderColor: "rgba(224,110,90,0.35)",
+    borderColor: colors.dangerBorder,
     borderRadius: radius.md,
     paddingVertical: 11,
     alignItems: "center",
   },
-  linkctlKillText: { fontFamily: fonts.body, fontSize: 13, color: colors.danger },
+  linkctlKillText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.danger },
 });
 
 // Re-export style helpers used inline in screens

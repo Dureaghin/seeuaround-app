@@ -21,6 +21,19 @@ export function isValidFriendCode(raw: string): boolean {
   return SHORT_CODE_RE.test(normalizeFriendCode(raw));
 }
 
+/** Pull a short code out of a scanned QR (raw code or https://seeuaround.com/add?code=). */
+export function codeFromScan(raw: string): string {
+  const trimmed = raw.trim();
+  try {
+    const url = new URL(trimmed);
+    const fromQuery = url.searchParams.get("code");
+    if (fromQuery) return normalizeFriendCode(fromQuery);
+  } catch {
+    // Not a URL — treat the payload as the code itself.
+  }
+  return normalizeFriendCode(trimmed);
+}
+
 export function resolveFriendCodeParam(raw: string | string[] | undefined): string {
   const value = Array.isArray(raw) ? raw[0] : raw;
   if (!value) return "";

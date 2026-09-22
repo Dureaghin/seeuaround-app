@@ -72,7 +72,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       <View
         style={{
           flex: 1,
-          backgroundColor: colors.night,
+          backgroundColor: "transparent",
           justifyContent: "center",
           alignItems: "center",
         }}

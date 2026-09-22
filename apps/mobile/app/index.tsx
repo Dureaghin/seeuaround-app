@@ -61,7 +61,7 @@ export default function Index() {
   }, [me, refresh, router]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.night, justifyContent: "center", alignItems: "center" }}>
+    <View style={{ flex: 1, backgroundColor: "transparent", justifyContent: "center", alignItems: "center" }}>
       <ActivityIndicator color={colors.lamp} size="large" />
     </View>
   );

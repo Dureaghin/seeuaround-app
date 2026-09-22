@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
-import { api } from "../src/lib/api";
+import { ApiError, api } from "../src/lib/api";
 import {
   Actions,
   Button,
@@ -50,7 +50,16 @@ export default function EmptyScreen() {
               name={p.firstName}
               nudge
               nudged={nudged.has(p.id)}
-              onNudge={() => setNudged((prev) => new Set(prev).add(p.id))}
+              onNudge={() => {
+                api
+                  .nudgeConnection(p.id)
+                  .then(() => setNudged((prev) => new Set(prev).add(p.id)))
+                  .catch((err) => {
+                    if (err instanceof ApiError && (err.status === 429 || err.status === 409)) {
+                      setNudged((prev) => new Set(prev).add(p.id));
+                    }
+                  });
+              }}
             />
           ))}
         </>

@@ -67,6 +67,14 @@ export const api = {
       body: JSON.stringify({ confirmed: true }),
     }),
 
+  setName: (firstName: string) =>
+    request<MeState>("/me/name", {
+      method: "POST",
+      body: JSON.stringify({ firstName }),
+    }),
+
+  rotateShortCode: () => request<MeState>("/me/short-code", { method: "POST" }),
+
   pause: (until: "week" | "month" | "forever") =>
     request<MeState>("/me/pause", {
       method: "POST",
@@ -111,6 +119,12 @@ export const api = {
   acceptConnection: (id: string) =>
     request(`/connections/${id}/accept`, { method: "POST" }),
 
+  blockConnection: (id: string) =>
+    request(`/connections/${id}/block`, { method: "POST" }),
+
+  nudgeConnection: (id: string) =>
+    request(`/connections/${id}/nudge`, { method: "POST" }),
+
   getOverlap: (id: string) =>
     request<{
       id: string;
@@ -143,6 +157,8 @@ export const api = {
   createInvite: () => request<InviteInfo>("/invites", { method: "POST" }),
 
   getActiveInvite: () => request<InviteStatus>("/invites/active"),
+
+  revokeInvite: () => request<{ ok: boolean }>("/invites/revoke", { method: "POST" }),
 
   previewInvite: (token: string) =>
     request<{ firstName: string }>(`/invites/${token}/preview`, {}, false),

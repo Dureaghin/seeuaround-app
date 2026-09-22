@@ -17,6 +17,7 @@ export type InviteStatus = Omit<InviteInfo, "url">;
 export const AppRoute = z.enum([
   "auth",
   "age",
+  "name",
   "accept",
   "invite",
   "overlap",
@@ -118,6 +119,16 @@ export const DeleteAccountSchema = z.object({
   code: z.string().regex(/^\d{6}$/),
 });
 export type DeleteAccountInput = z.infer<typeof DeleteAccountSchema>;
+
+export const SetNameSchema = z.object({
+  firstName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(24)
+    .regex(/^[\p{L}][\p{L}\s'.-]*$/u),
+});
+export type SetNameInput = z.infer<typeof SetNameSchema>;
 
 export type Connection = {
   id: string;

@@ -1,24 +1,33 @@
+/* Shared palette with the marketing site (seeuaround/website/index.source.html :root).
+   Dark, warm, a little nostalgic, never flashy. Keep the two in step. */
 export const colors = {
-  night: "#14161A",
-  surface: "#1E2127",
-  surface2: "#262A31",
-  pane: "#2E333B",
-  lamp: "#F3C267",
-  lampHot: "#FFE9B8",
-  lampGradStart: "#FBDC9C",
-  lampGradMid: "#F3C267",
-  lampGradEnd: "#E2A337",
-  chalk: "#E8E6E1",
-  dim: "#868C96",
-  muted: "#5F646D",
-  ink: "#181206",
-  line: "rgba(232,230,225,0.10)",
-  lineStrong: "rgba(232,230,225,0.28)",
-  danger: "#E06E5A",
-  fineprintBg: "rgba(38,42,49,0.5)",
-  lampTintBg: "rgba(243,194,103,0.09)",
-  lampTintBorder: "rgba(243,194,103,0.28)",
-  pushBg: "rgba(38,42,49,0.86)",
+  night: "#090807",
+  surface: "#141210",
+  surface2: "#1B1917",
+  /** Opaque panel over the ambient photo — keeps type and hairlines crisp. */
+  panel: "rgba(14,12,11,0.92)",
+  pane: "#2A2622",
+  lamp: "#DF8B32",
+  lampHot: "#F7D59A",
+  lampDeep: "#9E5314",
+  lampGradStart: "#F7D59A",
+  lampGradMid: "#DF8B32",
+  lampGradEnd: "#C26F1E",
+  chalk: "#FAF7F2",
+  /** Secondary type — kept a step brighter so grain doesn't swallow it. */
+  dim: "#A9A198",
+  muted: "#7A736B",
+  ink: "#090807",
+  line: "rgba(250,247,242,0.12)",
+  lineStrong: "rgba(250,247,242,0.28)",
+  glassBorder: "rgba(255,247,235,0.18)",
+  danger: "#E8876F",
+  dangerBorder: "rgba(232,135,111,0.55)",
+  dangerBg: "rgba(232,135,111,0.10)",
+  fineprintBg: "rgba(20,18,16,0.82)",
+  lampTintBg: "rgba(223,139,50,0.12)",
+  lampTintBorder: "rgba(223,139,50,0.35)",
+  pushBg: "rgba(20,18,16,0.92)",
 };
 
 export const spacing = {
@@ -42,9 +51,10 @@ export const radius = {
   composer: 23,
 };
 
+/* One face throughout, like the site: Inter, bold for display. */
 export const fonts = {
-  display: "BricolageGrotesque_800ExtraBold",
-  displayMedium: "BricolageGrotesque_500Medium",
+  display: "Inter_700Bold",
+  displayMedium: "Inter_600SemiBold",
   body: "Inter_400Regular",
   bodyMedium: "Inter_500Medium",
   bodySemi: "Inter_600SemiBold",

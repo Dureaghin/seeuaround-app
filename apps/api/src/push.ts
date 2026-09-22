@@ -94,6 +94,20 @@ function isInDeliveryWindow(timezone: string): boolean {
   }
 }
 
+export async function queueNotification(input: {
+  userId: string;
+  kind: string;
+  title: string;
+  body: string;
+  data?: Record<string, string>;
+}) {
+  await query(
+    `INSERT INTO notifications (user_id, kind, title, body, data)
+     VALUES ($1, $2, $3, $4, $5::jsonb)`,
+    [input.userId, input.kind, input.title, input.body, JSON.stringify(input.data ?? {})],
+  );
+}
+
 export async function queueSundayPrompts() {
   await query(
     `INSERT INTO notifications (user_id, kind, title, body, data, scheduled_for)

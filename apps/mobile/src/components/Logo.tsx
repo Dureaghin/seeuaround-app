@@ -1,23 +1,15 @@
-import { StyleSheet, Text, View, Platform } from "react-native";
-import Svg, { Defs, LinearGradient as SvgGradient, Rect, Stop } from "react-native-svg";
+import { StyleSheet, Text, View } from "react-native";
+import Svg, { Rect } from "react-native-svg";
 import { colors, fonts } from "../lib/theme";
 
+/* Same mark as the site's icon.svg: two lit squares on night. */
 export function BrandIcon({ size = 32 }: { size?: number }) {
   return (
-    <View style={{ width: size, height: size, borderRadius: size * 0.176, overflow: "hidden" }}>
-      <Svg width={size} height={size} viewBox="0 0 512 512">
-        <Defs>
-          <SvgGradient id="lampGrad" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0%" stopColor="#FBDC9C" />
-            <Stop offset="55%" stopColor="#F3C267" />
-            <Stop offset="100%" stopColor="#E2A337" />
-          </SvgGradient>
-        </Defs>
-        <Rect width={512} height={512} fill={colors.surface} />
-        <Rect x={266} y={112} width={114} height={136} rx={20} fill="#2E333B" />
-        <Rect x={132} y={264} width={114} height={136} rx={20} fill="#2E333B" />
-        <Rect x={132} y={112} width={114} height={136} rx={20} fill="url(#lampGrad)" />
-        <Rect x={266} y={264} width={114} height={136} rx={20} fill="url(#lampGrad)" />
+    <View style={{ width: size, height: size, borderRadius: size * 0.22, overflow: "hidden" }}>
+      <Svg width={size} height={size} viewBox="0 0 100 100">
+        <Rect width={100} height={100} fill={colors.night} />
+        <Rect x={19.75} y={19.75} width={27.75} height={27.75} rx={7.22} fill={colors.lamp} />
+        <Rect x={52.5} y={52.5} width={27.75} height={27.75} rx={7.22} fill={colors.lamp} />
       </Svg>
     </View>
   );
@@ -26,13 +18,10 @@ export function BrandIcon({ size = 32 }: { size?: number }) {
 export function BrandLockup({ compact }: { compact?: boolean }) {
   return (
     <View style={[styles.wrap, compact && styles.wrapCompact]}>
-      <View style={[styles.lockup, compact && styles.lockupCompact]}>
-        <BrandIcon size={compact ? 28 : 32} />
-        <Text style={[styles.mark, compact && styles.markCompact]}>
-          see<Text style={styles.litU}>u</Text>around
-        </Text>
+      <View style={styles.lockup}>
+        <BrandIcon size={compact ? 26 : 30} />
+        <Text style={[styles.mark, compact && styles.markCompact]}>seeuaround</Text>
       </View>
-      <Text style={[styles.tag, compact && styles.tagCompact]}>See you around.</Text>
     </View>
   );
 }
@@ -44,32 +33,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 11,
+    gap: 10,
   },
-  lockupCompact: {},
   mark: {
     fontFamily: fonts.display,
-    fontSize: 26,
-    letterSpacing: -1.04,
+    fontSize: 24,
+    letterSpacing: -0.72,
     color: colors.chalk,
   },
-  markCompact: { fontSize: 22 },
-  tag: {
-    fontFamily: fonts.body,
-    fontSize: 13.5,
-    color: colors.dim,
-    marginTop: 5,
-    textAlign: "center",
-  },
-  tagCompact: { fontSize: 12.5 },
-  litU: {
-    color: colors.lamp,
-    ...(Platform.OS === "web"
-      ? { textShadow: "0 0 14px rgba(243,194,103,0.5)" }
-      : {
-          textShadowColor: "rgba(243,194,103,0.5)",
-          textShadowOffset: { width: 0, height: 0 },
-          textShadowRadius: 14,
-        }),
-  },
+  markCompact: { fontSize: 20, letterSpacing: -0.6 },
 });

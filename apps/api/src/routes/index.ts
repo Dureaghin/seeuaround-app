@@ -11,6 +11,7 @@ import {
   INVITE_MAX_USES,
   INVITE_TTL_DAYS,
   PauseSchema,
+  SetNameSchema,
   VerifyCodeSchema,
   WeekWindowsSchema,
 } from "@seeuaround/shared";
@@ -27,6 +28,7 @@ import {
 } from "../crypto.js";
 import { query, withTransaction } from "../db.js";
 import { buildMeState, runMatchingForUser } from "../me-state.js";
+import { queueNotification } from "../push.js";
 import { config, getDevAuthCode } from "../config.js";
 import { computePauseUntil, isValidTimezone } from "../pause-until.js";
 
@@ -56,8 +58,8 @@ async function ensureUserId(email: string): Promise<string | null> {
   for (let i = 0; i < 5; i++) {
     try {
       const created = await query<{ id: string }>(
-        `INSERT INTO users (email, handle, first_name, short_code) VALUES ($1, $2, $3, $4) RETURNING id`,
-        [normalized, handle, handle, shortCode],
+        `INSERT INTO users (email, handle, first_name, short_code) VALUES ($1, $2, '', $3) RETURNING id`,
+        [normalized, handle, shortCode],
       );
       return created.rows[0]?.id ?? null;
     } catch {
@@ -328,7 +330,7 @@ export async function registerRoutes(app: FastifyInstance) {
          ) AS week_set
        FROM connections c
        JOIN users u ON u.id = CASE WHEN c.user_a = $1 THEN c.user_b ELSE c.user_a END
-       WHERE c.user_a = $1 OR c.user_b = $1
+       WHERE (c.user_a = $1 OR c.user_b = $1) AND c.status <> 'blocked'
        ORDER BY u.handle`,
       [userId, weekStart.toISOString(), weekEnd.toISOString()],
     );
@@ -377,11 +379,23 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const [userA, userB] = [request.user!.id, targetId].sort();
-    await query(
+    const { rows: created } = await query<{ id: string }>(
       `INSERT INTO connections (user_a, user_b, status) VALUES ($1, $2, 'pending')
-       ON CONFLICT (user_a, user_b) DO NOTHING`,
+       ON CONFLICT (user_a, user_b) DO NOTHING
+       RETURNING id`,
       [userA, userB],
     );
+    const connectionId = created[0]?.id;
+    if (connectionId) {
+      const name = request.user!.nameSet ? request.user!.firstName : "Someone";
+      await queueNotification({
+        userId: targetId,
+        kind: "connect",
+        title: "A request",
+        body: `${name} asked to connect.`,
+        data: { route: "accept", connectionId },
+      });
+    }
     return { ok: true };
   });
 
@@ -389,11 +403,103 @@ export async function registerRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const { rowCount } = await query(
       `UPDATE connections SET status = 'accepted'
-       WHERE id = $1 AND (user_a = $2 OR user_b = $2)`,
+       WHERE id = $1 AND status = 'pending' AND (user_a = $2 OR user_b = $2)`,
       [id, request.user!.id],
     );
     if (!rowCount) return reply.code(404).send({ error: "not_found" });
     return { ok: true };
+  });
+
+  app.post("/connections/:id/block", { preHandler: authHook }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { rowCount } = await query(
+      `UPDATE connections SET status = 'blocked'
+       WHERE id = $1 AND status = 'accepted' AND (user_a = $2 OR user_b = $2)`,
+      [id, request.user!.id],
+    );
+    if (!rowCount) return reply.code(404).send({ error: "not_found" });
+    return { ok: true };
+  });
+
+  app.post("/connections/:id/nudge", { preHandler: authHook }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { rows } = await query<{ peer_id: string; first_name: string }>(
+      `SELECT u.id AS peer_id, u.first_name
+       FROM connections c
+       JOIN users u ON u.id = CASE WHEN c.user_a = $2 THEN c.user_b ELSE c.user_a END
+       WHERE c.id = $1 AND c.status = 'accepted' AND (c.user_a = $2 OR c.user_b = $2)`,
+      [id, request.user!.id],
+    );
+    const peer = rows[0];
+    if (!peer) return reply.code(404).send({ error: "not_found" });
+
+    const weekStart = new Date();
+    const day = weekStart.getDay();
+    weekStart.setDate(weekStart.getDate() + (day === 0 ? 0 : 7 - day));
+    weekStart.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
+
+    const { rows: weekRows } = await query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM windows
+       WHERE user_id = $1 AND span && tstzrange($2, $3)`,
+      [peer.peer_id, weekStart.toISOString(), weekEnd.toISOString()],
+    );
+    if (Number(weekRows[0]?.count ?? 0) > 0) {
+      return reply.code(409).send({ error: "already_set" });
+    }
+
+    const { rows: recent } = await query<{ id: string }>(
+      `SELECT id FROM notifications
+       WHERE user_id = $1 AND kind = 'nudge'
+         AND data->>'fromUserId' = $2
+         AND created_at > now() - interval '20 hours'
+       LIMIT 1`,
+      [peer.peer_id, request.user!.id],
+    );
+    if (recent[0]) return reply.code(429).send({ error: "already_nudged" });
+
+    const name = request.user!.nameSet ? request.user!.firstName : "Someone";
+    await queueNotification({
+      userId: peer.peer_id,
+      kind: "nudge",
+      title: "Your week",
+      body: `${name} is waiting on your nights.`,
+      data: { route: "sunday", fromUserId: request.user!.id },
+    });
+    return { ok: true };
+  });
+
+  app.post("/me/name", { preHandler: authHook }, async (request, reply) => {
+    const parsed = SetNameSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_name" });
+    await query(`UPDATE users SET first_name = $1, name_set = TRUE WHERE id = $2`, [
+      parsed.data.firstName,
+      request.user!.id,
+    ]);
+    return buildMeState({
+      ...request.user!,
+      firstName: parsed.data.firstName,
+      nameSet: true,
+    });
+  });
+
+  app.post("/me/short-code", { preHandler: authHook }, async (request, reply) => {
+    for (let i = 0; i < 5; i++) {
+      const shortCode = generateShortCode();
+      try {
+        const { rowCount } = await query(
+          `UPDATE users SET short_code = $1 WHERE id = $2`,
+          [shortCode, request.user!.id],
+        );
+        if (!rowCount) return reply.code(404).send({ error: "not_found" });
+        return buildMeState({ ...request.user!, shortCode });
+      } catch {
+        // Unique collision — try another code.
+      }
+    }
+    return reply.code(500).send({ error: "retry" });
   });
 
   app.get("/overlaps/:id", { preHandler: authHook }, async (request, reply) => {
@@ -593,6 +699,15 @@ export async function registerRoutes(app: FastifyInstance) {
       maxUses: INVITE_MAX_USES,
       expiresAt: rows[0].expires_at,
     };
+  });
+
+  app.post("/invites/revoke", { preHandler: authHook }, async (request) => {
+    await query(
+      `UPDATE invite_tokens SET revoked_at = now()
+       WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()`,
+      [request.user!.id],
+    );
+    return { ok: true };
   });
 
   app.get("/invites/:token/preview", async (request, reply) => {

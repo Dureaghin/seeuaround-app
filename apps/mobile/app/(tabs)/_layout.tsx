@@ -14,7 +14,10 @@ export default function TabLayout() {
       )}
       screenOptions={{
         headerShown: false,
-        sceneStyle: { backgroundColor: colors.night },
+        // Opaque scenes — transparent ones stack and bleed into each other on web.
+        sceneStyle: { backgroundColor: colors.night, flex: 1 },
+        lazy: true,
+        freezeOnBlur: true,
       }}
     >
       <Tabs.Screen name="people" options={{ title: "People" }} />

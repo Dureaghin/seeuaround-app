@@ -17,7 +17,7 @@
     "android": {
       "package": "com.seeuaround.app",
       "adaptiveIcon": {
-        "backgroundColor": "#14161A",
+        "backgroundColor": "#090807",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -27,11 +27,17 @@
     "plugins": [
       "expo-router",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan a friend's code to connect."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
           "resizeMode": "contain",
-          "backgroundColor": "#14161A",
+          "backgroundColor": "#090807",
           "imageWidth": 200
         }
       ],
@@ -39,7 +45,7 @@
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
-          "color": "#F3C267"
+          "color": "#DF8B32"
         }
       ],
       "expo-secure-store",

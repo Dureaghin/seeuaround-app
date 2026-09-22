@@ -52,7 +52,9 @@ export function setupPushListeners(
     const data = r.notification.request.content.data ?? {};
     if (data.overlapId) onNavigate(`/overlap/${data.overlapId}`);
     else if (data.threadId) onNavigate(`/thread/${data.threadId}`);
-    else if (data.route === "sunday") onNavigate("/sunday");
+    else if (data.route === "accept" && data.connectionId) {
+      onNavigate(`/accept/${data.connectionId}`);
+    } else if (data.route === "sunday" || data.route === "nudge") onNavigate("/sunday");
   });
 
   return () => {

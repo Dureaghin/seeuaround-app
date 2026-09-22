@@ -79,7 +79,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingHorizontal: 12,
     gap: 8,
-    backgroundColor: colors.night,
+    backgroundColor: "rgba(9,8,7,0.88)",
     borderTopWidth: 1,
     borderTopColor: colors.line,
   },

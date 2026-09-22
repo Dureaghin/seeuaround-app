@@ -11,6 +11,7 @@ export type AuthedUser = {
   timezone: string;
   paused: boolean;
   ageVerified: boolean;
+  nameSet: boolean;
 };
 
 declare module "fastify" {
@@ -29,6 +30,7 @@ type UserRow = {
   paused: boolean;
   pause_until: string | null;
   age_verified_at: string | null;
+  name_set: boolean;
 };
 
 async function resolveExpiredPause(user: UserRow): Promise<UserRow> {
@@ -48,13 +50,14 @@ function mapUser(user: UserRow): AuthedUser {
     timezone: user.timezone,
     paused: user.paused,
     ageVerified: Boolean(user.age_verified_at),
+    nameSet: Boolean(user.name_set),
   };
 }
 
 async function loadSessionUser(tokenHash: string): Promise<AuthedUser | null> {
   const { rows } = await query<UserRow>(
     `SELECT u.id, u.email, u.handle, u.first_name, u.short_code, u.timezone,
-            u.paused, u.pause_until, u.age_verified_at
+            u.paused, u.pause_until, u.age_verified_at, u.name_set
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = $1 AND s.expires_at > now()`,

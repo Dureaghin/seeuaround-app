@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import {
+  Alert,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -25,7 +27,8 @@ export function AccountSheet({
   onClose: () => void;
 }) {
   const router = useRouter();
-  const { setMe } = useApp();
+  const { me, setMe } = useApp();
+  const [rotating, setRotating] = useState(false);
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const [step, setStep] = useState<Step>("main");
@@ -45,8 +48,30 @@ export function AccountSheet({
       setSendingCode(false);
       setDeleting(false);
       setSigningOut(false);
+      setRotating(false);
     }
   }, [visible]);
+
+  function rotateCode() {
+    const run = async () => {
+      setRotating(true);
+      try {
+        const state = await api.rotateShortCode();
+        setMe(state);
+      } finally {
+        setRotating(false);
+      }
+    };
+    const message = "Your old code stops working. Anyone who has it will need the new one.";
+    if (Platform.OS === "web") {
+      if (window.confirm(message)) void run();
+      return;
+    }
+    Alert.alert("New code?", message, [
+      { text: "Keep this one", style: "cancel" },
+      { text: "New code", style: "destructive", onPress: () => void run() },
+    ]);
+  }
 
   useEffect(() => {
     if (!visible || step !== "delete" || codeSent || sendingCode) return;
@@ -107,8 +132,17 @@ export function AccountSheet({
               <Sub style={{ maxWidth: undefined, marginTop: 13 }}>
                 You'll need a new code to get back in. Nothing is deleted when you sign out.
               </Sub>
+              {me?.user?.shortCode ? (
+                <Text style={styles.note}>Your code is {me.user.shortCode}.</Text>
+              ) : null}
 
               <Actions>
+                <Button
+                  label={rotating ? "Making a new code…" : "New code"}
+                  variant="ghost"
+                  onPress={rotateCode}
+                  loading={rotating}
+                />
                 <Button
                   label="Sign out"
                   variant="ghost"
