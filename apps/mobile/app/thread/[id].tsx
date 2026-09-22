@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
-import { useIsFocused, useLocalSearchParams } from "expo-router";
+import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { api } from "../../src/lib/api";
 import { useApp } from "../../src/context/AppContext";
 import { playVoiceUrl, startVoiceRecording, stopVoicePlayback, type VoiceClip } from "../../src/lib/voice";
@@ -9,15 +9,12 @@ import {
   MessageBubble,
   PlacePicker,
   PlanBar,
-  QuickChips,
   Screen,
-  Spacer,
   SysMessage,
   ThreadHeader,
   VoiceBubble,
 } from "../../src/components/ui";
 
-const QUICK = ["On my way", "Running late", "Can't make it"];
 const VOICE_LIMIT_MS = 60_000;
 
 type Thread = Awaited<ReturnType<typeof api.getThread>>;
@@ -25,6 +22,7 @@ type Plan = Thread["plan"];
 
 export default function ThreadScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const focused = useIsFocused();
   const { me } = useApp();
   const [thread, setThread] = useState<Thread | null>(null);
@@ -218,12 +216,27 @@ export default function ThreadScreen() {
   }, [thread?.messages, me?.user?.id]);
 
   return (
-    <Screen>
+    <Screen
+      footer={
+        <Composer
+          value={body}
+          onChange={setBody}
+          onSend={() => send()}
+          ready={!!body.trim() && !sending && !recording}
+          recording={recording}
+          onMic={() => {
+            void onMic();
+          }}
+          hint={voiceHint}
+        />
+      }
+    >
       <ThreadHeader
         title={dayTitle}
         subtitle={`You, ${memberNames}`}
         countdown={countdown}
         countdownSub={countdownSub}
+        onClose={() => router.replace("/sunday")}
       />
 
       <PlanBar
@@ -274,20 +287,6 @@ export default function ThreadScreen() {
         )}
       </View>
 
-      <Spacer />
-
-      <QuickChips chips={QUICK} onPress={(chip) => send(chip)} />
-      <Composer
-        value={body}
-        onChange={setBody}
-        onSend={() => send()}
-        ready={!!body.trim() && !sending && !recording}
-        recording={recording}
-        onMic={() => {
-          void onMic();
-        }}
-        hint={voiceHint}
-      />
     </Screen>
   );
 }

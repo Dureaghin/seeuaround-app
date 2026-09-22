@@ -27,18 +27,24 @@ export function Screen({
   children,
   showLogo = false,
   bare = false,
+  footer,
 }: {
   children: React.ReactNode;
   showLogo?: boolean;
   bare?: boolean;
+  /** Stays at the bottom of the window. The rest of the screen scrolls under it. */
+  footer?: React.ReactNode;
 }) {
   const segments = useSegments();
   const focused = useIsFocused();
   const insets = useSafeAreaInsets();
+  const [footerHeight, setFooterHeight] = useState(0);
   const inTabs = segments[0] === "(tabs)";
-  const paddingBottom = inTabs
-    ? TAB_BAR_HEIGHT + Math.max(insets.bottom, spacing.screenBottom)
-    : spacing.screenBottom;
+  const paddingBottom = footer
+    ? footerHeight + 12
+    : inTabs
+      ? TAB_BAR_HEIGHT + Math.max(insets.bottom, spacing.screenBottom)
+      : spacing.screenBottom;
 
   // Inactive tab scenes stay mounted on web and stack under the active one.
   // An empty opaque shell stops their type from bleeding through transparent scroll areas.
@@ -60,6 +66,23 @@ export function Screen({
         {showLogo && !bare ? <BrandLockup /> : null}
         {children}
       </ScrollView>
+      {footer ? (
+        <View
+          onLayout={(event) => {
+            const next = Math.ceil(event.nativeEvent.layout.height);
+            setFooterHeight((height) => (height === next ? height : next));
+          }}
+          style={[
+            styles.screenDock,
+            {
+              paddingBottom: Math.max(insets.bottom, 8),
+              position: Platform.OS === "web" ? "fixed" : "absolute",
+            },
+          ]}
+        >
+          {footer}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -654,11 +677,13 @@ export function ThreadHeader({
   subtitle,
   countdown,
   countdownSub,
+  onClose,
 }: {
   title: string;
   subtitle: string;
   countdown: string;
   countdownSub?: string;
+  onClose?: () => void;
 }) {
   return (
     <View style={styles.threadTop}>
@@ -666,9 +691,21 @@ export function ThreadHeader({
         <Text style={styles.threadTitle}>{title}</Text>
         <Text style={styles.threadSub}>{subtitle}</Text>
       </View>
-      <View>
-        <Text style={styles.countdown}>{countdown}</Text>
-        {countdownSub ? <Text style={styles.countdownSub}>{countdownSub}</Text> : null}
+      <View style={styles.threadTopR}>
+        <View>
+          <Text style={styles.countdown}>{countdown}</Text>
+          {countdownSub ? <Text style={styles.countdownSub}>{countdownSub}</Text> : null}
+        </View>
+        {onClose ? (
+          <Pressable
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+            style={styles.threadClose}
+          >
+            <Text style={styles.threadCloseMark}>×</Text>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
@@ -931,24 +968,6 @@ export function SysMessage({ children }: { children: React.ReactNode }) {
   return <Text style={styles.sys}>{children}</Text>;
 }
 
-export function QuickChips({
-  chips,
-  onPress,
-}: {
-  chips: string[];
-  onPress: (chip: string) => void;
-}) {
-  return (
-    <View style={styles.chips}>
-      {chips.map((chip) => (
-        <Pressable key={chip} onPress={() => onPress(chip)} style={styles.chip}>
-          <Text style={styles.chipText}>{chip}</Text>
-        </Pressable>
-      ))}
-    </View>
-  );
-}
-
 const micPulse =
   Platform.OS === "web"
     ? ({
@@ -976,11 +995,12 @@ export function Composer({
   onMic?: () => void;
   hint?: string | null;
 }) {
+  const [focused, setFocused] = useState(false);
   ensureBreathe();
   return (
     <View>
       {hint ? <Text style={styles.composerHint}>{hint}</Text> : null}
-      <View style={styles.composer}>
+      <View style={[styles.composer, focused && styles.composerFocus]}>
       <Pressable
         onPress={onMic}
         accessibilityLabel={recording ? "Stop voice note" : "Voice note"}
@@ -1000,6 +1020,8 @@ export function Composer({
         placeholder="Message"
         placeholderTextColor={colors.dim}
         style={styles.composerField}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         onSubmitEditing={() => {
           if (ready) onSend();
         }}
@@ -1052,6 +1074,15 @@ export function ErrText({ children }: { children: React.ReactNode }) {
 const styles = StyleSheet.create({
   screenRoot: { flex: 1, backgroundColor: colors.night, overflow: "hidden" },
   screenScroll: { flex: 1, backgroundColor: "transparent", zIndex: 1 },
+  screenDock: {
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 5,
+    paddingHorizontal: spacing.screenX,
+    paddingTop: 8,
+    backgroundColor: colors.night,
+  },
   screenContent: {
     flexGrow: 1,
     paddingHorizontal: spacing.screenX,
@@ -1523,12 +1554,25 @@ const styles = StyleSheet.create({
   threadTop: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "baseline",
+    alignItems: "flex-start",
     paddingBottom: 13,
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
   },
-  threadTopL: { flex: 1 },
+  threadTopL: { flex: 1, paddingTop: 10 },
+  threadTopR: { flexDirection: "row", alignItems: "center", gap: 2 },
+  threadClose: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  threadCloseMark: {
+    fontFamily: fonts.body,
+    fontSize: 22,
+    lineHeight: 24,
+    color: colors.dim,
+  },
   threadTitle: { fontFamily: fonts.displayMedium, fontSize: 17, color: colors.chalk },
   threadSub: { fontFamily: fonts.body, fontSize: 12, color: colors.dim, marginTop: 2 },
   countdown: {
@@ -1726,27 +1770,38 @@ const styles = StyleSheet.create({
     color: colors.muted,
     paddingVertical: 9,
   },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 16 },
-  chip: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: radius.pill,
-    paddingVertical: 8,
-    paddingHorizontal: 13,
-  },
-  chipText: { fontFamily: fonts.body, fontSize: 13, color: colors.chalk },
   composer: {
     flexDirection: "row",
     alignItems: "center",
     gap: 9,
-    marginTop: 13,
+    marginTop: 0,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.line,
     borderRadius: radius.composer,
     paddingVertical: 7,
     paddingHorizontal: 9,
+    ...(Platform.OS === "web"
+      ? ({
+          transitionProperty: "border-color, box-shadow",
+          transitionDuration: "180ms",
+          transitionTimingFunction: "ease",
+        } as object)
+      : null),
+  },
+  composerFocus: {
+    borderColor: "rgba(223,139,50,0.55)",
+    ...Platform.select({
+      web: {
+        boxShadow: "0 0 0 1px rgba(223,139,50,0.2), 0 0 18px rgba(223,139,50,0.42)",
+      },
+      default: {
+        shadowColor: colors.lamp,
+        shadowOpacity: 0.45,
+        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 0 },
+      },
+    }),
   },
   mic: {
     width: 34,
@@ -1785,6 +1840,7 @@ const styles = StyleSheet.create({
     color: colors.chalk,
     paddingVertical: 9,
     paddingHorizontal: 2,
+    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : null),
   },
   send: {
     width: 34,
