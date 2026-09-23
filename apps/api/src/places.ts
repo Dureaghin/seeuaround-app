@@ -93,18 +93,23 @@ async function searchNominatim(query: string, area: string): Promise<PlaceHit[]>
     ["amenity", "shop", "tourism", "leisure", "craft"].includes(row.class ?? ""),
   );
   const rows = venue.length > 0 ? venue : data.filter((row) => row.class !== "boundary");
-  return rows
-    .map((row) => {
-      const name = (row.name || row.display_name?.split(",")[0] || "").trim();
-      const kind = row.type && row.type !== "yes" ? row.type.replaceAll("_", " ") : "";
-      const street = row.address?.road || row.address?.suburb || "";
-      return {
-        name,
-        subtitle: [kind, street].filter(Boolean).join(" · "),
-      };
-    })
-    .filter((place) => place.name)
-    .slice(0, 10);
+  const seen = new Set<string>();
+  const places: PlaceHit[] = [];
+  for (const row of rows) {
+    const name = (row.name || row.display_name?.split(",")[0] || "").trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const kind = row.type && row.type !== "yes" ? row.type.replaceAll("_", " ") : "";
+    const street = row.address?.road || row.address?.suburb || "";
+    places.push({
+      name,
+      subtitle: [kind, street].filter(Boolean).join(" · "),
+    });
+    if (places.length === 10) break;
+  }
+  return places;
 }
 
 async function searchGoogleBars(area: string, key: string): Promise<PlaceHit[] | null> {

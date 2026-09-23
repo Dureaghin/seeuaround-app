@@ -359,7 +359,7 @@ export default function ThreadScreen() {
         {timeline.map((item) =>
           item.kind === "voice" ? (
             <View
-              key={item.key}
+              key={`voice-${item.key}`}
               style={{ alignItems: item.mine ? "flex-end" : "flex-start", marginTop: 9 }}
             >
               <VoiceBubble
@@ -373,12 +373,12 @@ export default function ThreadScreen() {
             </View>
           ) : (
             <View
-              key={item.key}
+              key={`text-${item.key}`}
               style={{ gap: 3, alignItems: item.mine ? "flex-end" : "flex-start", marginTop: 9 }}
             >
               {item.bodies.map((text, bi) => (
                 <MessageBubble
-                  key={`${item.key}-${bi}`}
+                  key={`text-${item.key}-${bi}`}
                   body={text}
                   from={bi === 0 ? item.from : undefined}
                   mine={item.mine}

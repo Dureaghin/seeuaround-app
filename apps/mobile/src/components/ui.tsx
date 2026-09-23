@@ -848,6 +848,43 @@ export function CompactThreadBar({
 type PlaceVote = { name: string; votes: number; mine: boolean };
 type PlaceHit = { name: string; subtitle: string };
 
+function uniquePlaces(list: PlaceHit[]): PlaceHit[] {
+  const seen = new Set<string>();
+  const out: PlaceHit[] = [];
+  for (const place of list) {
+    const key = place.name.trim().toLowerCase().replace(/\s+/g, " ");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ ...place, name: place.name.trim() });
+  }
+  return out;
+}
+
+function PlaceAddRow({
+  place,
+  onAdd,
+}: {
+  place: PlaceHit;
+  onAdd: (name: string) => void;
+}) {
+  return (
+    <Pressable
+      onPress={() => onAdd(place.name)}
+      accessibilityRole="button"
+      accessibilityLabel={`Add ${place.name} to the list`}
+      style={styles.addRow}
+    >
+      <View style={styles.pickRb}>
+        <Text style={styles.addName}>{place.name}</Text>
+        {place.subtitle ? <Text style={styles.addSub}>{place.subtitle}</Text> : null}
+      </View>
+      <View style={styles.addBtn}>
+        <Text style={styles.addBtnText}>Add</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 const MEET_SLOTS: { hour: number; minute: 0 | 30; label: string }[] = [
   { hour: 17, minute: 0, label: "5:00 PM" },
   { hour: 17, minute: 30, label: "5:30 PM" },
@@ -1048,29 +1085,11 @@ export function PlacePicker({
         ? `Your pick is ${mine?.name}. Tap a row to change it.`
         : "Tap a row. The most taps is the plan.";
   const already = new Set(places.map((place) => place.name.toLowerCase()));
-  const bars = suggestions.filter((place) => !already.has(place.name.toLowerCase()));
-  const searchHits = results.filter((place) => !already.has(place.name.toLowerCase()));
+  const bars = uniquePlaces(suggestions.filter((place) => !already.has(place.name.toLowerCase())));
+  const searchHits = uniquePlaces(results.filter((place) => !already.has(place.name.toLowerCase())));
 
-  function placeRow(place: PlaceHit) {
-    return (
-      <Pressable
-        key={place.name}
-        onPress={() => {
-          void addResult(place.name);
-        }}
-        accessibilityRole="button"
-        accessibilityLabel={`Add ${place.name} to the list`}
-        style={styles.addRow}
-      >
-        <View style={styles.pickRb}>
-          <Text style={styles.addName}>{place.name}</Text>
-          {place.subtitle ? <Text style={styles.addSub}>{place.subtitle}</Text> : null}
-        </View>
-        <View style={styles.addBtn}>
-          <Text style={styles.addBtnText}>Add</Text>
-        </View>
-      </Pressable>
-    );
+  function addFromHit(name: string) {
+    void addResult(name);
   }
 
   return (
@@ -1193,15 +1212,21 @@ export function PlacePicker({
               {searchHits.length === 0 ? (
                 <>
                   <Text style={styles.pickEmpty}>Nothing in {area} matches that.</Text>
-                  {query.trim() && !already.has(query.trim().toLowerCase())
-                    ? placeRow({
+                  {query.trim() && !already.has(query.trim().toLowerCase()) ? (
+                    <PlaceAddRow
+                      key={`custom-${query.trim().toLowerCase()}`}
+                      place={{
                         name: query.trim(),
                         subtitle: "Not in the list. Add it anyway.",
-                      })
-                    : null}
+                      }}
+                      onAdd={addFromHit}
+                    />
+                  ) : null}
                 </>
               ) : (
-                searchHits.map((r) => placeRow(r))
+                searchHits.map((r, i) => (
+                  <PlaceAddRow key={`search-${i}`} place={r} onAdd={addFromHit} />
+                ))
               )}
               <Text style={styles.pickAttr}>
                 {source === "google" ? "Places data · Google" : "Places data · OpenStreetMap"}
@@ -1217,12 +1242,12 @@ export function PlacePicker({
 
         {places.length > 0 ? (
           <View style={styles.pickList}>
-            {places.map((place) => {
+            {places.map((place, index) => {
               const taps = `${place.votes} ${place.votes === 1 ? "tap" : "taps"}`;
               const canVote = readyToVote;
               return (
                 <View
-                  key={place.name}
+                  key={`vote-${index}`}
                   style={[styles.pickOpt, place.mine && styles.pickOptOn, !canVote && styles.areaSaveOff]}
                 >
                   <Pressable
@@ -1278,7 +1303,9 @@ export function PlacePicker({
           {!suggesting && bars.length === 0 ? (
             <Text style={styles.pickEmpty}>Nothing turned up. Try a search.</Text>
           ) : null}
-          {bars.map((r) => placeRow(r))}
+          {bars.map((r, i) => (
+            <PlaceAddRow key={`suggest-${i}`} place={r} onAdd={addFromHit} />
+          ))}
         </View>
       ) : null}
     </View>
