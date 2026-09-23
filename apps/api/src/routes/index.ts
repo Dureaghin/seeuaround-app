@@ -937,8 +937,11 @@ export async function registerRoutes(app: FastifyInstance) {
       expires_at: string;
       area: string;
       pinned_place: string | null;
+      night_date: string;
     }>(
-      `SELECT t.expires_at, t.area, t.pinned_place FROM threads t
+      `SELECT t.expires_at, t.area, t.pinned_place, o.night_date::text
+       FROM threads t
+       JOIN "overlaps" o ON o.id = t.overlap_id
        JOIN overlap_members om ON om.overlap_id = t.overlap_id AND om.user_id = $2
        WHERE t.id = $1 AND om.response = 'in'`,
       [id, request.user!.id],
@@ -967,6 +970,7 @@ export async function registerRoutes(app: FastifyInstance) {
     return {
       id,
       expiresAt: threadRows[0].expires_at,
+      nightDate: threadRows[0].night_date.slice(0, 10),
       plan: await loadThreadPlan(id, request.user!.id),
       messages: messages.map((m) => ({
         id: m.id,

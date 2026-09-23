@@ -732,11 +732,13 @@ export function ThreadHeader({
 }
 
 export function PlanBar({
-  plan,
+  when,
+  place,
   onWherePress,
   directionsUrl,
 }: {
-  plan: string;
+  when: string;
+  place: string;
   onWherePress?: () => void;
   directionsUrl?: string;
 }) {
@@ -744,7 +746,10 @@ export function PlanBar({
     <View style={styles.plan}>
       <View style={styles.planBody}>
         <Text style={styles.planH}>The plan</Text>
-        <Text style={styles.planV}>{plan}</Text>
+        <Text style={styles.planV}>{when}</Text>
+        <Text style={styles.planPlace} numberOfLines={2}>
+          {place}
+        </Text>
       </View>
       {directionsUrl ? (
         <Pressable
@@ -778,13 +783,15 @@ export function PlanBar({
 
 export function CompactThreadBar({
   title,
-  plan,
+  when,
+  place,
   onWherePress,
   onClose,
   directionsUrl,
 }: {
   title: string;
-  plan: string;
+  when: string;
+  place: string;
   onWherePress?: () => void;
   onClose?: () => void;
   directionsUrl?: string;
@@ -796,7 +803,10 @@ export function CompactThreadBar({
           {title}
         </Text>
         <Text style={styles.compactPlan} numberOfLines={1}>
-          {plan}
+          {when}
+        </Text>
+        <Text style={styles.compactPlace} numberOfLines={1}>
+          {place}
         </Text>
       </View>
       {directionsUrl ? (
@@ -839,18 +849,18 @@ type PlaceVote = { name: string; votes: number; mine: boolean };
 type PlaceHit = { name: string; subtitle: string };
 
 const MEET_SLOTS: { hour: number; minute: 0 | 30; label: string }[] = [
-  { hour: 17, minute: 0, label: "5:00" },
-  { hour: 17, minute: 30, label: "5:30" },
-  { hour: 18, minute: 0, label: "6:00" },
-  { hour: 18, minute: 30, label: "6:30" },
-  { hour: 19, minute: 0, label: "7:00" },
-  { hour: 19, minute: 30, label: "7:30" },
-  { hour: 20, minute: 0, label: "8:00" },
-  { hour: 20, minute: 30, label: "8:30" },
-  { hour: 21, minute: 0, label: "9:00" },
-  { hour: 21, minute: 30, label: "9:30" },
-  { hour: 22, minute: 0, label: "10:00" },
-  { hour: 22, minute: 30, label: "10:30" },
+  { hour: 17, minute: 0, label: "5:00 PM" },
+  { hour: 17, minute: 30, label: "5:30 PM" },
+  { hour: 18, minute: 0, label: "6:00 PM" },
+  { hour: 18, minute: 30, label: "6:30 PM" },
+  { hour: 19, minute: 0, label: "7:00 PM" },
+  { hour: 19, minute: 30, label: "7:30 PM" },
+  { hour: 20, minute: 0, label: "8:00 PM" },
+  { hour: 20, minute: 30, label: "8:30 PM" },
+  { hour: 21, minute: 0, label: "9:00 PM" },
+  { hour: 21, minute: 30, label: "9:30 PM" },
+  { hour: 22, minute: 0, label: "10:00 PM" },
+  { hour: 22, minute: 30, label: "10:30 PM" },
 ];
 
 function formatMeetTime(meetAt: string | null | undefined): string | null {
@@ -1463,7 +1473,7 @@ export function PlacePage({
                       disabled={savingMeet}
                       accessibilityRole="button"
                       accessibilityState={{ selected: on }}
-                      accessibilityLabel={`Meet at ${slot.label} PM`}
+                      accessibilityLabel={`Meet at ${slot.label}`}
                       style={[styles.meetChip, on && styles.meetChipOn]}
                     >
                       <Text style={[styles.meetChipText, on && styles.meetChipTextOn]}>
@@ -2233,6 +2243,12 @@ const styles = StyleSheet.create({
     color: colors.dim,
     marginTop: 1,
   },
+  compactPlace: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.chalk,
+    marginTop: 1,
+  },
   planH: {
     fontFamily: fonts.mono,
     fontSize: 9,
@@ -2241,6 +2257,12 @@ const styles = StyleSheet.create({
     color: colors.dim,
   },
   planV: { fontFamily: fonts.bodyMedium, fontSize: 14.5, color: colors.chalk, marginTop: 4 },
+  planPlace: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14.5,
+    color: colors.chalk,
+    marginTop: 2,
+  },
   planEdit: {
     height: 34,
     borderWidth: 1,

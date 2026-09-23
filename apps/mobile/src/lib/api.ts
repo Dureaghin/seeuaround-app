@@ -149,6 +149,7 @@ export const api = {
     request<{
       id: string;
       expiresAt: string;
+      nightDate: string;
       plan: {
         area: string;
         pinnedPlace: string | null;

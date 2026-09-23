@@ -206,12 +206,17 @@ export default function ThreadScreen() {
     const h = Math.max(0, Math.floor(ms / 3600000));
     const d = Math.floor(h / 24);
     const rh = h % 24;
-    const sub = new Date(thread.expiresAt)
-      .toLocaleString("en-US", { weekday: "short", hour: "numeric" })
-      .toUpperCase();
+    const end = new Date(thread.expiresAt);
+    const weekday = end.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
+    const hour24 = end.getHours();
+    const mins = end.getMinutes();
+    const hour12 = hour24 % 12 || 12;
+    const ampm = hour24 >= 12 ? "PM" : "AM";
+    const clock = mins ? `${hour12}:${String(mins).padStart(2, "0")}${ampm}` : `${hour12}${ampm}`;
     return {
       countdown: d > 0 ? `GONE IN ${d}D ${String(rh).padStart(2, "0")}H` : `GONE IN ${rh}H`,
-      countdownSub: sub,
+      // Chat disappears the morning after — meet time lives on The plan.
+      countdownSub: `CHAT ENDS ${weekday} ${clock}`,
     };
   }, [thread?.expiresAt]);
 
@@ -225,10 +230,25 @@ export default function ThreadScreen() {
     return Array.from(names).slice(0, 3).join(", ") || "Your group";
   }, [thread?.messages, me?.user?.id]);
 
-  const dayTitle = useMemo(() => {
-    if (!thread?.expiresAt) return "Tonight";
-    return new Date(thread.expiresAt).toLocaleDateString("en-US", { weekday: "long" });
-  }, [thread?.expiresAt]);
+  const { dayTitle, nightDay } = useMemo(() => {
+    const night = thread?.nightDate;
+    if (night) {
+      const [year, month, day] = night.split("-").map(Number);
+      if (year && month && day) {
+        const date = new Date(year, month - 1, day);
+        return {
+          dayTitle: date.toLocaleDateString("en-US", { weekday: "long" }),
+          nightDay: date.toLocaleDateString("en-US", { weekday: "short" }),
+        };
+      }
+    }
+    if (!thread?.expiresAt) return { dayTitle: "Tonight", nightDay: null as string | null };
+    const end = new Date(thread.expiresAt);
+    return {
+      dayTitle: end.toLocaleDateString("en-US", { weekday: "long" }),
+      nightDay: end.toLocaleDateString("en-US", { weekday: "short" }),
+    };
+  }, [thread?.nightDate, thread?.expiresAt]);
 
   const plan = thread?.plan;
   const area = plan?.area || "Saratoga Springs";
@@ -237,10 +257,17 @@ export default function ThreadScreen() {
   const meetHour = plan?.meetHour ?? null;
   const meetMinute = plan?.meetMinute ?? null;
   const isHost = Boolean(plan?.isHost);
-  const meetLabel = meetAt
-    ? new Date(meetAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-    : "Time TBD";
-  const planLabel = pinnedPlace ? `${meetLabel} · ${pinnedPlace}` : `${meetLabel} · not decided`;
+  const meetLabel =
+    meetHour != null && meetMinute != null
+      ? new Date(2000, 0, 1, meetHour, meetMinute).toLocaleTimeString("en-US", {
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : meetAt
+        ? new Date(meetAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+        : "Time TBD";
+  const whenLabel = meetAt && nightDay ? `${nightDay}, ${meetLabel}` : meetLabel;
+  const placeLabel = pinnedPlace || "not decided";
   const directionsUrl =
     pinnedPlace && pinnedPlace.toLowerCase() !== "wherever's open"
       ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${pinnedPlace}, ${area}`)}`
@@ -287,7 +314,8 @@ export default function ThreadScreen() {
         compact ? (
           <CompactThreadBar
             title={dayTitle}
-            plan={planLabel}
+            when={whenLabel}
+            place={placeLabel}
             onWherePress={() => setShowPicker(true)}
             onClose={() => router.replace("/sunday")}
             directionsUrl={directionsUrl}
@@ -302,7 +330,8 @@ export default function ThreadScreen() {
               onClose={() => router.replace("/sunday")}
             />
             <PlanBar
-              plan={planLabel}
+              when={whenLabel}
+              place={placeLabel}
               onWherePress={() => setShowPicker(true)}
               directionsUrl={directionsUrl}
             />
