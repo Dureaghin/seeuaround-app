@@ -4,6 +4,7 @@ import {
   Animated,
   Easing,
   Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -27,18 +28,24 @@ export function Screen({
   children,
   showLogo = false,
   bare = false,
+  header,
   footer,
+  scrollRef,
 }: {
   children: React.ReactNode;
   showLogo?: boolean;
   bare?: boolean;
+  /** Stays at the top. Pass a function to draw a shorter bar once the thread scrolls. */
+  header?: React.ReactNode | ((compact: boolean) => React.ReactNode);
   /** Stays at the bottom of the window. The rest of the screen scrolls under it. */
   footer?: React.ReactNode;
+  scrollRef?: React.Ref<ScrollView>;
 }) {
   const segments = useSegments();
   const focused = useIsFocused();
   const insets = useSafeAreaInsets();
   const [footerHeight, setFooterHeight] = useState(0);
+  const [headerCompact, setHeaderCompact] = useState(false);
   const inTabs = segments[0] === "(tabs)";
   const paddingBottom = footer
     ? footerHeight + 12
@@ -55,11 +62,23 @@ export function Screen({
   return (
     <View style={styles.screenRoot}>
       <AmbientBackground />
+      {header ? (
+        <View style={[styles.screenHead, headerCompact && styles.screenHeadCompact]}>
+          {typeof header === "function" ? header(headerCompact) : header}
+        </View>
+      ) : null}
       <ScrollView
+        ref={scrollRef}
+        scrollEventThrottle={16}
+        onScroll={(event) => {
+          if (!header) return;
+          const next = event.nativeEvent.contentOffset.y > 24;
+          setHeaderCompact((current) => (current === next ? current : next));
+        }}
         style={styles.screenScroll}
         contentContainerStyle={[
           bare ? styles.bareContent : styles.screenContent,
-          { paddingBottom },
+          { paddingBottom, paddingTop: header ? 12 : undefined },
         ]}
         keyboardShouldPersistTaps="handled"
       >
@@ -707,12 +726,10 @@ export function PlanBar({
   plan,
   onWherePress,
   directionsUrl,
-  whereOpen,
 }: {
   plan: string;
   onWherePress?: () => void;
   directionsUrl?: string;
-  whereOpen?: boolean;
 }) {
   return (
     <View style={styles.plan}>
@@ -739,9 +756,72 @@ export function PlanBar({
           </Svg>
         </Pressable>
       ) : null}
-      <Pressable style={styles.planEdit} onPress={onWherePress}>
-        <Text style={styles.planEditText}>{whereOpen ? "Done" : "Where?"}</Text>
+      <Pressable
+        style={styles.planEdit}
+        onPress={onWherePress}
+        accessibilityLabel="Where"
+      >
+        <Text style={styles.planEditText}>Where</Text>
       </Pressable>
+    </View>
+  );
+}
+
+export function CompactThreadBar({
+  title,
+  plan,
+  onWherePress,
+  onClose,
+  directionsUrl,
+}: {
+  title: string;
+  plan: string;
+  onWherePress?: () => void;
+  onClose?: () => void;
+  directionsUrl?: string;
+}) {
+  return (
+    <View style={styles.compactBar}>
+      <View style={styles.planBody}>
+        <Text style={styles.compactTitle} numberOfLines={1}>
+          {title}
+        </Text>
+        <Text style={styles.compactPlan} numberOfLines={1}>
+          {plan}
+        </Text>
+      </View>
+      {directionsUrl ? (
+        <Pressable
+          accessibilityLabel="Directions"
+          style={styles.planDir}
+          onPress={() => {
+            Linking.openURL(directionsUrl).catch(() => {});
+          }}
+        >
+          <Svg width={16} height={16} viewBox="0 0 24 24">
+            <Path
+              d="M12 21s7-6.4 7-11a7 7 0 1 0-14 0c0 4.6 7 11 7 11z"
+              fill="none"
+              stroke={colors.lamp}
+              strokeWidth={1.6}
+            />
+            <Circle cx={12} cy={10} r={2.6} fill="none" stroke={colors.lamp} strokeWidth={1.6} />
+          </Svg>
+        </Pressable>
+      ) : null}
+      <Pressable style={styles.planEdit} onPress={onWherePress} accessibilityLabel="Where">
+        <Text style={styles.planEditText}>Where</Text>
+      </Pressable>
+      {onClose ? (
+        <Pressable
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+          style={styles.threadClose}
+        >
+          <Text style={styles.threadCloseMark}>×</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -752,15 +832,19 @@ type PlaceHit = { name: string; subtitle: string };
 export function PlacePicker({
   area,
   places,
+  pinnedPlace,
   onVote,
   onArea,
   onSearch,
+  page = false,
 }: {
   area: string;
   places: PlaceVote[];
+  pinnedPlace?: string | null;
   onVote: (name: string | null) => void;
   onArea: (area: string) => void;
   onSearch: (query: string, area: string) => Promise<{ places: PlaceHit[]; source: string }>;
+  page?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PlaceHit[]>([]);
@@ -822,20 +906,49 @@ export function PlacePicker({
     else setAreaDraft(area);
   }
 
+  const topVotes = places.reduce((top, place) => Math.max(top, place.votes), 0);
+  const tied =
+    topVotes > 0 && places.filter((place) => place.votes === topVotes).length > 1;
+
+  const youPicked = places.some((place) => place.mine);
+  const lead = !topVotes
+    ? "Nobody has picked yet. Tap the place you want."
+    : youPicked
+      ? "Tap another place to change your pick."
+      : "Tap the place you want.";
+  const rule =
+    tied && pinnedPlace
+      ? `It's a tie, so ${pinnedPlace} stays. It was picked first.`
+      : "The most taps becomes the plan.";
+
   return (
-    <View style={styles.pick}>
-      <Text style={styles.pickH}>Where are we going?</Text>
+    <View style={page ? styles.pickPage : styles.pick}>
+      <Text style={styles.pickTitle}>Pick a place</Text>
+      <Text style={styles.pickLead}>{lead}</Text>
+      <Text style={styles.pickRule}>{rule}</Text>
       <View style={styles.pickList}>
-        {places.map((place) => (
+        {places.map((place) => {
+          const taps = `${place.votes} ${place.votes === 1 ? "tap" : "taps"}`;
+          return (
           <Pressable
             key={place.name}
             onPress={() => onVote(place.mine ? null : place.name)}
+            accessibilityRole="button"
+            accessibilityLabel={
+              place.mine
+                ? `${place.name}, your pick, ${taps}. Tap to clear it.`
+                : `${place.name}, ${taps}. Tap to pick it.`
+            }
             style={[styles.pickOpt, place.mine && styles.pickOptOn]}
           >
             <Text style={styles.pickName}>{place.name}</Text>
-            <Text style={[styles.pickN, place.mine && styles.pickNOn]}>{place.votes} in</Text>
+            <View style={styles.pickMeta}>
+              {place.mine ? <Text style={styles.pickYou}>Your pick</Text> : null}
+              <Text style={[styles.pickN, place.mine && styles.pickNOn]}>{taps}</Text>
+            </View>
           </Pressable>
-        ))}
+          );
+        })}
       </View>
       <View style={styles.pickAdd}>
         <TextInput
@@ -844,7 +957,7 @@ export function PlacePicker({
             setQuery(text);
             search(text);
           }}
-          placeholder="Search a bar or restaurant"
+          placeholder="Search for another place"
           placeholderTextColor={colors.dim}
           style={styles.pickField}
           onSubmitEditing={() => search()}
@@ -854,7 +967,7 @@ export function PlacePicker({
         </Pressable>
       </View>
       <View style={styles.pickArea}>
-        <Text style={styles.pickAreaText}>Searching </Text>
+        <Text style={styles.pickAreaText}>Places in </Text>
         {editingArea ? (
           <TextInput
             value={areaDraft}
@@ -870,7 +983,7 @@ export function PlacePicker({
             <Text style={styles.pickAreaBtn}>{area}</Text>
           </Pressable>
         )}
-        <Text style={styles.pickAreaNote}> · set once, per group</Text>
+        <Text style={styles.pickAreaNote}> · the group sets this once</Text>
       </View>
       {searched ? (
         <View style={styles.pickRes}>
@@ -902,8 +1015,70 @@ export function PlacePicker({
           </Text>
         </View>
       ) : null}
-      <Text style={styles.pickF}>Tap one to say you're up for it. Most taps gets pinned.</Text>
     </View>
+  );
+}
+
+export function PlacePage({
+  visible,
+  onClose,
+  area,
+  places,
+  pinnedPlace,
+  onVote,
+  onArea,
+  onSearch,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  area: string;
+  places: PlaceVote[];
+  pinnedPlace?: string | null;
+  onVote: (name: string | null) => void;
+  onArea: (area: string) => void;
+  onSearch: (query: string, area: string) => Promise<{ places: PlaceHit[]; source: string }>;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={onClose}
+    >
+      <View style={[styles.placePage, Platform.OS === "web" ? { minHeight: "100%" } : null]}>
+        <AmbientBackground />
+        <View style={[styles.placePageBar, { paddingTop: Math.max(insets.top, 18) }]}>
+          <Text style={styles.placePageKicker}>Where</Text>
+          <Pressable
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+            style={styles.threadClose}
+          >
+            <Text style={styles.threadCloseMark}>×</Text>
+          </Pressable>
+        </View>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingHorizontal: spacing.screenX,
+            paddingBottom: Math.max(insets.bottom, 24) + 12,
+          }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <PlacePicker
+            page
+            area={area}
+            places={places}
+            pinnedPlace={pinnedPlace}
+            onVote={onVote}
+            onArea={onArea}
+            onSearch={onSearch}
+          />
+        </ScrollView>
+      </View>
+    </Modal>
   );
 }
 
@@ -1081,6 +1256,17 @@ export function ErrText({ children }: { children: React.ReactNode }) {
 const styles = StyleSheet.create({
   screenRoot: { flex: 1, backgroundColor: colors.night, overflow: "hidden" },
   screenScroll: { flex: 1, backgroundColor: "transparent", zIndex: 1 },
+  screenHead: {
+    zIndex: 4,
+    backgroundColor: colors.night,
+    paddingHorizontal: spacing.screenX,
+    paddingTop: 36,
+    paddingBottom: 10,
+  },
+  screenHeadCompact: {
+    paddingTop: 10,
+    paddingBottom: 8,
+  },
   screenDock: {
     left: 0,
     right: 0,
@@ -1609,6 +1795,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
   },
   planBody: { flex: 1 },
+  compactBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  compactTitle: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 15,
+    color: colors.chalk,
+  },
+  compactPlan: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.dim,
+    marginTop: 1,
+  },
   planH: {
     fontFamily: fonts.mono,
     fontSize: 9,
@@ -1618,11 +1820,13 @@ const styles = StyleSheet.create({
   },
   planV: { fontFamily: fonts.bodyMedium, fontSize: 14.5, color: colors.chalk, marginTop: 4 },
   planEdit: {
+    height: 34,
     borderWidth: 1,
     borderColor: "rgba(223,139,50,0.35)",
     borderRadius: radius.pill,
-    paddingVertical: 6,
-    paddingHorizontal: 11,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
   },
   planEditText: {
     fontFamily: fonts.mono,
@@ -1649,13 +1853,42 @@ const styles = StyleSheet.create({
     padding: 15,
     marginTop: 10,
   },
-  pickH: {
+  pickPage: { paddingTop: 8 },
+  placePage: { flex: 1, backgroundColor: colors.night },
+  placePageBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.screenX - 8,
+    paddingBottom: 8,
+  },
+  placePageKicker: {
     fontFamily: fonts.mono,
-    fontSize: 9.5,
-    letterSpacing: 1.33,
+    fontSize: 12,
+    letterSpacing: 1.4,
     textTransform: "uppercase",
+    color: colors.lamp,
+    paddingLeft: 8,
+  },
+  pickTitle: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 18,
+    color: colors.chalk,
+  },
+  pickLead: {
+    fontFamily: fonts.body,
+    fontSize: 14.5,
+    lineHeight: 20,
+    color: colors.chalk,
+    marginTop: 6,
+  },
+  pickRule: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
     color: colors.dim,
-    marginBottom: 11,
+    marginTop: 2,
+    marginBottom: 12,
   },
   pickList: { gap: 7 },
   pickOpt: {
@@ -1664,7 +1897,7 @@ const styles = StyleSheet.create({
     gap: 11,
     backgroundColor: colors.surface2,
     borderWidth: 1,
-    borderColor: "transparent",
+    borderColor: colors.line,
     borderRadius: 12,
     paddingVertical: 11,
     paddingHorizontal: 13,
@@ -1674,7 +1907,13 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(223,139,50,0.08)",
   },
   pickName: { flex: 1, fontFamily: fonts.body, fontSize: 14, color: colors.chalk },
-  pickN: { fontFamily: fonts.mono, fontSize: 11, color: colors.dim },
+  pickMeta: { flexDirection: "row", alignItems: "center", gap: 8 },
+  pickYou: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: colors.lamp,
+  },
+  pickN: { fontFamily: fonts.mono, fontSize: 12, color: colors.dim, minWidth: 12, textAlign: "right" },
   pickNOn: { color: colors.lamp },
   pickAdd: { flexDirection: "row", gap: 8, marginTop: 10 },
   pickField: {

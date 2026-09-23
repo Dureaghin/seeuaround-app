@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { colors, fonts } from "../../src/lib/theme";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { api } from "../../src/lib/api";
@@ -8,7 +8,8 @@ import { playMessageAudio, startVoiceRecording, stopVoicePlayback, type VoiceCli
 import {
   Composer,
   MessageBubble,
-  PlacePicker,
+  CompactThreadBar,
+  PlacePage,
   PlanBar,
   Screen,
   SysMessage,
@@ -45,6 +46,8 @@ export default function ThreadScreen() {
   const [recording, setRecording] = useState(false);
   const [voiceHint, setVoiceHint] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const reveal = useRef(false);
   const recorder = useRef<{ stop: () => Promise<VoiceClip> } | null>(null);
   const finishing = useRef(false);
   const stopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -74,6 +77,18 @@ export default function ThreadScreen() {
     setThread(updated);
   }
 
+  function revealLatest() {
+    reveal.current = true;
+  }
+
+  useEffect(() => {
+    if (!reveal.current) return;
+    reveal.current = false;
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    });
+  }, [thread?.messages.length]);
+
   async function send(text?: string) {
     const msg = (text ?? body).trim();
     if (!id || !msg || sending) return;
@@ -81,6 +96,7 @@ export default function ThreadScreen() {
     try {
       await api.sendMessage(id, { body: msg });
       setBody("");
+      revealLatest();
       await reload();
     } finally {
       setSending(false);
@@ -108,6 +124,7 @@ export default function ThreadScreen() {
         mime: clip.mime,
         durationMs: Math.min(clip.durationMs, VOICE_LIMIT_MS),
       });
+      revealLatest();
       await reload();
     } catch {
       setVoiceHint("Allow the microphone to leave a voice note.");
@@ -238,7 +255,35 @@ export default function ThreadScreen() {
   }, [thread?.messages, me?.user?.id]);
 
   return (
+    <>
     <Screen
+      scrollRef={scrollRef}
+      header={(compact) =>
+        compact ? (
+          <CompactThreadBar
+            title={dayTitle}
+            plan={planLabel}
+            onWherePress={() => setShowPicker(true)}
+            onClose={() => router.replace("/sunday")}
+            directionsUrl={directionsUrl}
+          />
+        ) : (
+          <>
+            <ThreadHeader
+              title={dayTitle}
+              subtitle={`You, ${memberNames}`}
+              countdown={countdown}
+              countdownSub={countdownSub}
+              onClose={() => router.replace("/sunday")}
+            />
+            <PlanBar
+              plan={planLabel}
+              onWherePress={() => setShowPicker(true)}
+              directionsUrl={directionsUrl}
+            />
+          </>
+        )
+      }
       footer={
         <Composer
           value={body}
@@ -253,32 +298,7 @@ export default function ThreadScreen() {
         />
       }
     >
-      <ThreadHeader
-        title={dayTitle}
-        subtitle={`You, ${memberNames}`}
-        countdown={countdown}
-        countdownSub={countdownSub}
-        onClose={() => router.replace("/sunday")}
-      />
-
-      <PlanBar
-        plan={planLabel}
-        onWherePress={() => setShowPicker((v) => !v)}
-        whereOpen={showPicker}
-        directionsUrl={directionsUrl}
-      />
-
-      {showPicker && plan ? (
-        <PlacePicker
-          area={area}
-          places={plan.places}
-          onVote={vote}
-          onArea={saveArea}
-          onSearch={(q, searchArea) => api.searchPlaces(q, searchArea)}
-        />
-      ) : null}
-
-      <View style={{ marginTop: 18, gap: 3 }}>
+      <View style={{ marginTop: 8, gap: 3 }}>
         {thread?.messages.length === 0 ? (
           <SysMessage>Everyone's in — say where to meet</SysMessage>
         ) : null}
@@ -318,6 +338,19 @@ export default function ThreadScreen() {
       </View>
 
     </Screen>
+    {plan ? (
+      <PlacePage
+        visible={showPicker}
+        onClose={() => setShowPicker(false)}
+        area={area}
+        places={plan.places}
+        pinnedPlace={pinnedPlace}
+        onVote={vote}
+        onArea={saveArea}
+        onSearch={(q, searchArea) => api.searchPlaces(q, searchArea)}
+      />
+    ) : null}
+    </>
   );
 }
 
