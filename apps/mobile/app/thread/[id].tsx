@@ -159,9 +159,27 @@ export default function ThreadScreen() {
     applyPlan(res.plan);
   }
 
+  async function addPlace(name: string) {
+    if (!id) return;
+    const res = await api.addPlace(id, name);
+    applyPlan(res.plan);
+  }
+
+  async function removePlace(name: string) {
+    if (!id) return;
+    const res = await api.removePlace(id, name);
+    applyPlan(res.plan);
+  }
+
   async function saveArea(area: string) {
     if (!id) return;
     const res = await api.setArea(id, area);
+    applyPlan(res.plan);
+  }
+
+  async function saveMeet(hour: number, minute: 0 | 30) {
+    if (!id) return;
+    const res = await api.setMeetTime(id, hour, minute);
     applyPlan(res.plan);
   }
 
@@ -215,7 +233,14 @@ export default function ThreadScreen() {
   const plan = thread?.plan;
   const area = plan?.area || "Saratoga Springs";
   const pinnedPlace = plan?.pinnedPlace ?? null;
-  const planLabel = pinnedPlace ? `8:00 PM · ${pinnedPlace}` : "8:00 PM · not decided";
+  const meetAt = plan?.meetAt ?? null;
+  const meetHour = plan?.meetHour ?? null;
+  const meetMinute = plan?.meetMinute ?? null;
+  const isHost = Boolean(plan?.isHost);
+  const meetLabel = meetAt
+    ? new Date(meetAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+    : "Time TBD";
+  const planLabel = pinnedPlace ? `${meetLabel} · ${pinnedPlace}` : `${meetLabel} · not decided`;
   const directionsUrl =
     pinnedPlace && pinnedPlace.toLowerCase() !== "wherever's open"
       ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${pinnedPlace}, ${area}`)}`
@@ -345,9 +370,17 @@ export default function ThreadScreen() {
         area={area}
         places={plan.places}
         pinnedPlace={pinnedPlace}
+        meetAt={meetAt}
+        meetHour={meetHour}
+        meetMinute={meetMinute}
+        isHost={isHost}
         onVote={vote}
+        onAdd={addPlace}
+        onRemove={removePlace}
         onArea={saveArea}
+        onMeet={saveMeet}
         onSearch={(q, searchArea) => api.searchPlaces(q, searchArea)}
+        onSuggest={(searchArea) => api.suggestBars(searchArea)}
       />
     ) : null}
     </>

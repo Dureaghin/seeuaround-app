@@ -52,10 +52,20 @@ export default function SundayScreen() {
 
   const litCount = nights.filter((n) => n.free).length;
   const eyebrow = me?.weekSet ? "This week" : "Sunday";
+  const threadId = me?.activeThreadId ?? null;
+  const threadLabel = me?.activeThreadLabel?.trim() || "Tonight";
 
   return (
     <Screen>
       <TabEyebrow>{eyebrow}</TabEyebrow>
+      {threadId ? (
+        <View style={{ marginBottom: 18 }}>
+          <Button
+            label={`Open ${threadLabel}`}
+            onPress={() => router.push(`/thread/${threadId}`)}
+          />
+        </View>
+      ) : null}
       <Headline>Which nights are you free?</Headline>
       <Sub>Tap the nights you're up for. Clears Monday morning.</Sub>
 

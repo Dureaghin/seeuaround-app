@@ -47,6 +47,7 @@ export const MeStateSchema = z.object({
   weekSet: z.boolean(),
   unansweredOverlapId: z.string().uuid().nullable(),
   activeThreadId: z.string().uuid().nullable(),
+  activeThreadLabel: z.string().nullable().optional(),
   pendingHangoutCheck: z
     .object({
       overlapId: z.string().uuid(),
@@ -109,6 +110,13 @@ export const ThreadAreaSchema = z.object({
   area: z.string().trim().min(1).max(40),
 });
 export type ThreadAreaInput = z.infer<typeof ThreadAreaSchema>;
+
+/** Local clock time on the hangout night — host picks from half-hour slots. */
+export const ThreadMeetSchema = z.object({
+  hour: z.number().int().min(17).max(22),
+  minute: z.union([z.literal(0), z.literal(30)]),
+});
+export type ThreadMeetInput = z.infer<typeof ThreadMeetSchema>;
 
 export const PushReceivedSchema = z.object({
   notificationId: z.string().uuid(),

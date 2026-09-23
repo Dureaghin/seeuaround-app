@@ -11,6 +11,7 @@ export async function buildMeState(user: AuthedUser): Promise<MeState> {
     week_count: string;
     overlap_id: string | null;
     thread_id: string | null;
+    thread_label: string | null;
     hangout_overlap_id: string | null;
     hangout_night: string | null;
     pending_id: string | null;
@@ -30,8 +31,13 @@ export async function buildMeState(user: AuthedUser): Promise<MeState> {
           JOIN overlap_members om ON om.overlap_id = t.overlap_id AND om.user_id = $1
           WHERE om.response = 'in'
             AND t.expires_at > now()
-            AND lower((SELECT span FROM "overlaps" WHERE id = t.overlap_id)) <= now() + interval '1 day'
           ORDER BY t.expires_at ASC LIMIT 1) AS thread_id,
+       (SELECT trim(to_char(o.night_date, 'Day')) FROM threads t
+          JOIN "overlaps" o ON o.id = t.overlap_id
+          JOIN overlap_members om ON om.overlap_id = t.overlap_id AND om.user_id = $1
+          WHERE om.response = 'in'
+            AND t.expires_at > now()
+          ORDER BY t.expires_at ASC LIMIT 1) AS thread_label,
        (SELECT hc.overlap_id::text FROM hangout_checks hc
           WHERE hc.user_id = $1 AND hc.response IS NULL
             AND hc.night_date = (timezone(COALESCE(NULLIF($3, ''), 'America/New_York'), now()))::date - 1
@@ -61,6 +67,7 @@ export async function buildMeState(user: AuthedUser): Promise<MeState> {
   const weekSet = Number(state?.week_count ?? 0) > 0;
   const unansweredOverlapId = state?.overlap_id ?? null;
   const activeThreadId = state?.thread_id ?? null;
+  const activeThreadLabel = state?.thread_label?.trim() || null;
   const pendingConnectionId = state?.pending_id ?? null;
   const friendsMissingWeek = Number(state?.missing_week ?? 0);
 
@@ -119,6 +126,7 @@ export async function buildMeState(user: AuthedUser): Promise<MeState> {
     weekSet,
     unansweredOverlapId,
     activeThreadId,
+    activeThreadLabel,
     pendingHangoutCheck,
     pendingConnectionId,
   };

@@ -184,12 +184,83 @@ export async function queueNotification(input: {
   title: string;
   body: string;
   data?: Record<string, string>;
+  scheduledFor?: Date | string | null;
 }) {
   await query(
-    `INSERT INTO notifications (user_id, kind, title, body, data)
-     VALUES ($1, $2, $3, $4, $5::jsonb)`,
-    [input.userId, input.kind, input.title, input.body, JSON.stringify(input.data ?? {})],
+    `INSERT INTO notifications (user_id, kind, title, body, data, scheduled_for)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
+    [
+      input.userId,
+      input.kind,
+      input.title,
+      input.body,
+      JSON.stringify(input.data ?? {}),
+      input.scheduledFor ? new Date(input.scheduledFor).toISOString() : null,
+    ],
   );
+}
+
+const REMIND_BEFORE_MS = 2 * 60 * 60 * 1000;
+
+/** One day-of reminder per person going, 2 hours before meet_at. */
+export async function scheduleMeetReminders(threadId: string) {
+  await query(
+    `DELETE FROM notifications
+     WHERE kind = 'reminder' AND sent_at IS NULL AND data->>'threadId' = $1`,
+    [threadId],
+  );
+
+  const { rows: meta } = await query<{
+    meet_at: string | null;
+    pinned_place: string | null;
+    night_date: string;
+  }>(
+    `SELECT t.meet_at, t.pinned_place, o.night_date::text
+     FROM threads t
+     JOIN "overlaps" o ON o.id = t.overlap_id
+     WHERE t.id = $1`,
+    [threadId],
+  );
+  const thread = meta[0];
+  if (!thread?.meet_at) return;
+
+  const meet = new Date(thread.meet_at);
+  if (Number.isNaN(meet.getTime()) || meet.getTime() <= Date.now()) return;
+
+  const remindAt = new Date(meet.getTime() - REMIND_BEFORE_MS);
+  const scheduledFor = remindAt.getTime() <= Date.now() ? new Date() : remindAt;
+
+  const { rows: members } = await query<{ user_id: string; timezone: string }>(
+    `SELECT om.user_id, COALESCE(NULLIF(u.timezone, ''), 'America/New_York') AS timezone
+     FROM overlap_members om
+     JOIN threads t ON t.overlap_id = om.overlap_id
+     JOIN users u ON u.id = om.user_id
+     WHERE t.id = $1 AND om.response = 'in'`,
+    [threadId],
+  );
+
+  const [year, month, day] = thread.night_date.slice(0, 10).split("-").map(Number);
+  const weekday = new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    weekday: "long",
+  });
+  const place = thread.pinned_place?.trim() || null;
+
+  for (const member of members) {
+    const timeLabel = meet.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: member.timezone,
+    });
+    const body = place ? `Meet at ${timeLabel} · ${place}` : `Meet at ${timeLabel}`;
+    await queueNotification({
+      userId: member.user_id,
+      kind: "reminder",
+      title: weekday,
+      body,
+      data: { threadId, route: "thread" },
+      scheduledFor,
+    });
+  }
 }
 
 export async function queueSundayPrompts() {

@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
-import { SITE } from "@seeuaround/shared";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Linking, Pressable, StyleSheet, Text, View, type TextInput } from "react-native";
+import { SITE, SendCodeSchema } from "@seeuaround/shared";
 import { colors, fonts, spacing } from "../../src/lib/theme";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { api } from "../../src/lib/api";
-import { rememberAuthEmail } from "../../src/lib/auth-email";
+import { ApiError, api } from "../../src/lib/api";
+import { recallAuthEmail, rememberAuthEmail } from "../../src/lib/auth-email";
 import {
   isValidFriendCode,
   normalizeFriendCode,
@@ -23,20 +23,29 @@ import {
   uiStyles,
 } from "../../src/components/ui";
 
+function isValidEmail(value: string): boolean {
+  return SendCodeSchema.safeParse({ email: value.trim() }).success;
+}
+
 export default function EmailScreen() {
   const params = useLocalSearchParams<{ friendCode?: string | string[] }>();
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const codeRef = useRef<TextInput>(null);
+  const [email, setEmail] = useState(() => recallAuthEmail());
   const [friendCode, setFriendCode] = useState("");
   const [showFriendCode, setShowFriendCode] = useState(false);
   const [optIn, setOptIn] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [touched, setTouched] = useState(false);
 
   const presetFriendCode = useMemo(
     () => resolveFriendCodeParam(params.friendCode),
     [params.friendCode],
   );
+  const emailValid = isValidEmail(email);
+  const emailHint =
+    touched && email.trim() && !emailValid ? "Enter a valid email address." : "";
 
   useEffect(() => {
     if (!presetFriendCode) return;
@@ -46,20 +55,29 @@ export default function EmailScreen() {
   }, [presetFriendCode]);
 
   async function onContinue() {
-    setLoading(true);
+    if (loading) return;
+    setTouched(true);
     setError("");
-    const trimmedEmail = email.trim();
+    const trimmedEmail = email.trim().toLowerCase();
     const trimmedCode = friendCode.trim();
 
-    if (trimmedCode && !isValidFriendCode(trimmedCode)) {
-      setError("Friend codes look like SU-XXXX-XXXX.");
-      setLoading(false);
+    if (!isValidEmail(trimmedEmail)) {
+      setError("Enter a valid email address.");
       return;
     }
 
+    if (trimmedCode && !isValidFriendCode(trimmedCode)) {
+      setError("Friend codes look like SU-XXXX-XXXX.");
+      return;
+    }
+
+    setLoading(true);
     try {
       await api.sendCode(trimmedEmail);
-      rememberAuthEmail(trimmedEmail.toLowerCase());
+      rememberAuthEmail(trimmedEmail);
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.setItem("seeuaround_marketing_opt_in", optIn ? "1" : "0");
+      }
       if (trimmedCode) rememberPendingFriendCode(trimmedCode);
       router.replace({
         pathname: "/(auth)/code",
@@ -68,8 +86,12 @@ export default function EmailScreen() {
           ...(trimmedCode ? { friendCode: normalizeFriendCode(trimmedCode) } : {}),
         },
       });
-    } catch {
-      setError("Something went wrong. Try again.");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 429) {
+        setError("Too many tries. Wait a minute and try again.");
+      } else {
+        setError("Something went wrong. Try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -82,21 +104,53 @@ export default function EmailScreen() {
 
       <TextField
         value={email}
-        onChangeText={setEmail}
+        onChangeText={(value) => {
+          setEmail(value);
+          if (error) setError("");
+        }}
+        onBlur={() => setTouched(true)}
         placeholder="you@example.com"
         keyboardType="email-address"
         autoCapitalize="none"
+        autoComplete="email"
+        textContentType="emailAddress"
+        inputMode="email"
+        importantForAutofill="yes"
+        autoFocus={!email}
+        returnKeyType={showFriendCode ? "next" : "send"}
+        enterKeyHint={showFriendCode ? "next" : "send"}
+        onSubmitEditing={() => {
+          if (showFriendCode) {
+            codeRef.current?.focus();
+            return;
+          }
+          void onContinue();
+        }}
+        accessibilityLabel="Email"
         style={styles.field}
       />
+      {emailHint ? <Text style={[uiStyles.err, styles.fieldHint]}>{emailHint}</Text> : null}
 
       {showFriendCode ? (
         <>
           <TextField
+            ref={codeRef}
             value={friendCode}
-            onChangeText={(v) => setFriendCode(normalizeFriendCode(v))}
+            onChangeText={(v) => {
+              setFriendCode(normalizeFriendCode(v));
+              if (error) setError("");
+            }}
             placeholder="SU-XXXX-XXXX"
             autoCapitalize="characters"
+            autoComplete="off"
+            textContentType="none"
             maxLength={12}
+            returnKeyType="send"
+            enterKeyHint="send"
+            onSubmitEditing={() => {
+              void onContinue();
+            }}
+            accessibilityLabel="Friend code"
             style={styles.codeField}
           />
           <Sub style={styles.helper}>You'll connect after you verify.</Sub>
@@ -121,9 +175,11 @@ export default function EmailScreen() {
       <Actions style={styles.actions}>
         <Button
           label="Send me a code"
-          onPress={onContinue}
+          onPress={() => {
+            void onContinue();
+          }}
           loading={loading}
-          disabled={!email.includes("@")}
+          disabled={!emailValid}
         />
       </Actions>
       <View style={styles.legalRow}>
@@ -147,6 +203,7 @@ const styles = StyleSheet.create({
   title: { marginTop: spacing.xxl },
   sub: { marginTop: spacing.sm, maxWidth: 320 },
   field: { marginTop: spacing.xxl },
+  fieldHint: { marginTop: spacing.sm },
   codeField: { marginTop: spacing.lg },
   helper: { marginTop: spacing.sm, maxWidth: undefined },
   link: { marginTop: spacing.lg, minHeight: 44, justifyContent: "center" },

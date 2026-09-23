@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -13,6 +13,7 @@ import {
   TextInput,
   View,
   type TextInput as TextInputType,
+  type TextInputProps,
 } from "react-native";
 import { useSegments, useIsFocused } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -81,6 +82,8 @@ export function Screen({
           { paddingBottom, paddingTop: header ? 12 : undefined },
         ]}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
       >
         {showLogo && !bare ? <BrandLockup /> : null}
         {children}
@@ -145,6 +148,8 @@ export function Button({
     <Pressable
       onPress={onPress}
       disabled={disabled || loading}
+      accessibilityRole="button"
+      accessibilityLabel={label}
       style={({ pressed }) => [
         styles.btn,
         variant === "ghost" && styles.btnGhost,
@@ -196,23 +201,21 @@ export function Panel({
   return <View style={[styles.panel, style]}>{children}</View>;
 }
 
-export function TextField(props: {
-  value: string;
-  onChangeText: (v: string) => void;
-  placeholder: string;
-  keyboardType?: "default" | "email-address" | "number-pad";
-  autoCapitalize?: "none" | "sentences" | "words" | "characters";
-  maxLength?: number;
-  style?: object;
-}) {
+export const TextField = forwardRef<TextInputType, TextInputProps>(function TextField(
+  { style, placeholderTextColor, autoCorrect, spellCheck, ...props },
+  ref,
+) {
   return (
     <TextInput
+      ref={ref}
+      placeholderTextColor={placeholderTextColor ?? colors.muted}
+      autoCorrect={autoCorrect ?? false}
+      spellCheck={spellCheck ?? false}
       {...props}
-      placeholderTextColor={colors.muted}
-      style={[styles.tinput, props.style]}
+      style={[styles.tinput, style]}
     />
   );
-}
+});
 
 export function OtpInput({
   value,
@@ -312,8 +315,14 @@ export function OptIn({
   style?: object;
 }) {
   return (
-    <Pressable onPress={onToggle} style={[styles.optin, style]}>
-      <View style={[styles.optinBox, checked && styles.optinBoxOn]}>
+    <Pressable
+      onPress={onToggle}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+      accessibilityLabel={label}
+      style={[styles.optin, style]}
+    >
+      <View style={[styles.optinBox, checked && styles.optinBoxOn]} accessibilityElementsHidden>
         {checked ? <Text style={styles.optinCheck}>✓</Text> : null}
       </View>
       <Text style={styles.optinText}>{label}</Text>
@@ -829,31 +838,76 @@ export function CompactThreadBar({
 type PlaceVote = { name: string; votes: number; mine: boolean };
 type PlaceHit = { name: string; subtitle: string };
 
+const MEET_SLOTS: { hour: number; minute: 0 | 30; label: string }[] = [
+  { hour: 17, minute: 0, label: "5:00" },
+  { hour: 17, minute: 30, label: "5:30" },
+  { hour: 18, minute: 0, label: "6:00" },
+  { hour: 18, minute: 30, label: "6:30" },
+  { hour: 19, minute: 0, label: "7:00" },
+  { hour: 19, minute: 30, label: "7:30" },
+  { hour: 20, minute: 0, label: "8:00" },
+  { hour: 20, minute: 30, label: "8:30" },
+  { hour: 21, minute: 0, label: "9:00" },
+  { hour: 21, minute: 30, label: "9:30" },
+  { hour: 22, minute: 0, label: "10:00" },
+  { hour: 22, minute: 30, label: "10:30" },
+];
+
+function formatMeetTime(meetAt: string | null | undefined): string | null {
+  if (!meetAt) return null;
+  const date = new Date(meetAt);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
+function meetSlotSelected(
+  meetHour: number | null | undefined,
+  meetMinute: number | null | undefined,
+  hour: number,
+  minute: number,
+): boolean {
+  return meetHour === hour && meetMinute === minute;
+}
+
 export function PlacePicker({
   area,
   places,
   pinnedPlace,
+  isHost = false,
   onVote,
+  onAdd,
+  onRemove,
   onArea,
   onSearch,
+  onSuggest,
   page = false,
 }: {
   area: string;
   places: PlaceVote[];
   pinnedPlace?: string | null;
+  isHost?: boolean;
   onVote: (name: string | null) => void;
-  onArea: (area: string) => void;
+  onAdd: (name: string) => void | Promise<void>;
+  onRemove?: (name: string) => void | Promise<void>;
+  onArea: (area: string) => void | Promise<void>;
   onSearch: (query: string, area: string) => Promise<{ places: PlaceHit[]; source: string }>;
+  onSuggest: (area: string) => Promise<{ places: PlaceHit[]; source: string }>;
   page?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PlaceHit[]>([]);
+  const [suggestions, setSuggestions] = useState<PlaceHit[]>([]);
+  const [suggesting, setSuggesting] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [source, setSource] = useState("openstreetmap");
+  const [searchFocused, setSearchFocused] = useState(false);
   const [editingArea, setEditingArea] = useState(false);
+  const [savingArea, setSavingArea] = useState(false);
   const [areaDraft, setAreaDraft] = useState(area);
   const searchWait = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSerial = useRef(0);
+  const suggestSerial = useRef(0);
 
   useEffect(() => {
     if (!editingArea) setAreaDraft(area);
@@ -865,16 +919,19 @@ export function PlacePicker({
     };
   }, []);
 
-  function search(text = query) {
+  function search(text = query, immediate = false) {
     if (searchWait.current) clearTimeout(searchWait.current);
     const q = text.trim();
     if (!q) {
+      searchSerial.current += 1;
       setResults([]);
       setSearched(false);
+      setSearching(false);
       return;
     }
-    searchWait.current = setTimeout(() => {
+    const fire = () => {
       const serial = ++searchSerial.current;
+      setSearching(true);
       onSearch(q, area)
         .then((found) => {
           if (serial !== searchSerial.current) return;
@@ -886,133 +943,332 @@ export function PlacePicker({
           if (serial !== searchSerial.current) return;
           setResults([]);
           setSearched(true);
+        })
+        .finally(() => {
+          if (serial === searchSerial.current) setSearching(false);
         });
-    }, 300);
+    };
+    if (immediate) fire();
+    else searchWait.current = setTimeout(fire, 300);
   }
 
-  function addResult(name: string) {
+  async function addResult(name: string) {
     const trimmed = name.trim();
     if (!trimmed) return;
-    onVote(trimmed);
+    await onAdd(trimmed);
+    searchSerial.current += 1;
     setQuery("");
     setResults([]);
     setSearched(false);
+    setSearching(false);
   }
 
-  function commitArea() {
+  useEffect(() => {
+    if (!isHost) {
+      setSuggestions([]);
+      setSuggesting(false);
+      return;
+    }
+    if (searchWait.current) clearTimeout(searchWait.current);
+    searchSerial.current += 1;
+    setQuery("");
+    setResults([]);
+    setSuggestions([]);
+    setSearched(false);
+    setSearching(false);
+    const serial = ++suggestSerial.current;
+    setSuggesting(true);
+    onSuggest(area)
+      .then((found) => {
+        if (serial !== suggestSerial.current) return;
+        setSuggestions(found.places.slice(0, 10));
+        setSource(found.source);
+      })
+      .catch(() => {
+        if (serial !== suggestSerial.current) return;
+        setSuggestions([]);
+      })
+      .finally(() => {
+        if (serial === suggestSerial.current) setSuggesting(false);
+      });
+  }, [area, isHost]);
+
+  async function commitArea() {
+    if (!isHost) return;
     const next = areaDraft.trim();
+    if (!next || next === area) {
+      setEditingArea(false);
+      setAreaDraft(area);
+      return;
+    }
+    setSavingArea(true);
+    try {
+      await onArea(next);
+      setEditingArea(false);
+    } catch {
+      setAreaDraft(next);
+    } finally {
+      setSavingArea(false);
+    }
+  }
+
+  function cancelArea() {
+    setAreaDraft(area);
     setEditingArea(false);
-    if (next && next !== area) onArea(next);
-    else setAreaDraft(area);
   }
 
   const topVotes = places.reduce((top, place) => Math.max(top, place.votes), 0);
   const tied =
     topVotes > 0 && places.filter((place) => place.votes === topVotes).length > 1;
+  const readyToVote = places.length >= 2;
+  const mine = places.find((place) => place.mine);
+  const youPicked = Boolean(mine);
+  const title = readyToVote
+    ? "Vote"
+    : isHost
+      ? "Pick places"
+      : "Where";
+  const lead = !readyToVote
+    ? isHost
+      ? "Set the town, then add 2 or 3 places. Everyone votes after that."
+      : "Waiting for the host to pick places."
+    : tied && pinnedPlace
+      ? `It's a tie, so ${pinnedPlace} stays. Tap a row to break it.`
+      : youPicked
+        ? `Your pick is ${mine?.name}. Tap a row to change it.`
+        : "Tap a row. The most taps is the plan.";
+  const already = new Set(places.map((place) => place.name.toLowerCase()));
+  const bars = suggestions.filter((place) => !already.has(place.name.toLowerCase()));
+  const searchHits = results.filter((place) => !already.has(place.name.toLowerCase()));
 
-  const youPicked = places.some((place) => place.mine);
-  const lead = !topVotes
-    ? "Nobody has picked yet. Tap the place you want."
-    : youPicked
-      ? "Tap another place to change your pick."
-      : "Tap the place you want.";
-  const rule =
-    tied && pinnedPlace
-      ? `It's a tie, so ${pinnedPlace} stays. It was picked first.`
-      : "The most taps becomes the plan.";
+  function placeRow(place: PlaceHit) {
+    return (
+      <Pressable
+        key={place.name}
+        onPress={() => {
+          void addResult(place.name);
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={`Add ${place.name} to the list`}
+        style={styles.addRow}
+      >
+        <View style={styles.pickRb}>
+          <Text style={styles.addName}>{place.name}</Text>
+          {place.subtitle ? <Text style={styles.addSub}>{place.subtitle}</Text> : null}
+        </View>
+        <View style={styles.addBtn}>
+          <Text style={styles.addBtnText}>Add</Text>
+        </View>
+      </Pressable>
+    );
+  }
 
   return (
     <View style={page ? styles.pickPage : styles.pick}>
-      <Text style={styles.pickTitle}>Pick a place</Text>
-      <Text style={styles.pickLead}>{lead}</Text>
-      <Text style={styles.pickRule}>{rule}</Text>
-      <View style={styles.pickList}>
-        {places.map((place) => {
-          const taps = `${place.votes} ${place.votes === 1 ? "tap" : "taps"}`;
-          return (
-          <Pressable
-            key={place.name}
-            onPress={() => onVote(place.mine ? null : place.name)}
-            accessibilityRole="button"
-            accessibilityLabel={
-              place.mine
-                ? `${place.name}, your pick, ${taps}. Tap to clear it.`
-                : `${place.name}, ${taps}. Tap to pick it.`
-            }
-            style={[styles.pickOpt, place.mine && styles.pickOptOn]}
-          >
-            <Text style={styles.pickName}>{place.name}</Text>
-            <View style={styles.pickMeta}>
-              {place.mine ? <Text style={styles.pickYou}>Your pick</Text> : null}
-              <Text style={[styles.pickN, place.mine && styles.pickNOn]}>{taps}</Text>
+      {!page ? (
+      <View style={styles.areaCard}>
+        {isHost && editingArea ? (
+          <>
+            <Text style={styles.areaKicker}>Town or neighbourhood</Text>
+            <TextInput
+              value={areaDraft}
+              onChangeText={setAreaDraft}
+              onSubmitEditing={() => {
+                void commitArea();
+              }}
+              autoFocus
+              maxLength={40}
+              placeholder="Ballston Spa"
+              placeholderTextColor={colors.dim}
+              style={styles.pickField}
+            />
+            <View style={styles.areaActions}>
+              <Pressable
+                onPress={() => {
+                  void commitArea();
+                }}
+                disabled={savingArea || !areaDraft.trim() || areaDraft.trim() === area}
+                accessibilityRole="button"
+                accessibilityLabel="Save town"
+                style={[
+                  styles.planEdit,
+                  (savingArea || !areaDraft.trim() || areaDraft.trim() === area) && styles.areaSaveOff,
+                ]}
+              >
+                <Text style={styles.planEditText}>{savingArea ? "Saving" : "Save"}</Text>
+              </Pressable>
+              <Pressable
+                onPress={cancelArea}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
+                style={styles.planEdit}
+              >
+                <Text style={styles.planEditText}>Cancel</Text>
+              </Pressable>
             </View>
-          </Pressable>
-          );
-        })}
-      </View>
-      <View style={styles.pickAdd}>
-        <TextInput
-          value={query}
-          onChangeText={(text) => {
-            setQuery(text);
-            search(text);
-          }}
-          placeholder="Search for another place"
-          placeholderTextColor={colors.dim}
-          style={styles.pickField}
-          onSubmitEditing={() => search()}
-        />
-        <Pressable onPress={() => search()} style={styles.pickGo}>
-          <Text style={styles.pickGoText}>→</Text>
-        </Pressable>
-      </View>
-      <View style={styles.pickArea}>
-        <Text style={styles.pickAreaText}>Places in </Text>
-        {editingArea ? (
-          <TextInput
-            value={areaDraft}
-            onChangeText={setAreaDraft}
-            onBlur={commitArea}
-            onSubmitEditing={commitArea}
-            autoFocus
-            maxLength={40}
-            style={styles.pickAreaField}
-          />
+          </>
         ) : (
-          <Pressable onPress={() => setEditingArea(true)} accessibilityLabel="Change area">
-            <Text style={styles.pickAreaBtn}>{area}</Text>
-          </Pressable>
+          <View style={styles.areaRow}>
+            <View style={styles.planBody}>
+              <Text style={styles.areaKicker}>Looking in</Text>
+              <Text style={styles.areaName}>{area}</Text>
+            </View>
+            {isHost ? (
+              <Pressable
+                onPress={() => setEditingArea(true)}
+                accessibilityRole="button"
+                accessibilityLabel={`Change town, currently ${area}`}
+                style={styles.planEdit}
+              >
+                <Text style={styles.planEditText}>Change</Text>
+              </Pressable>
+            ) : null}
+          </View>
         )}
-        <Text style={styles.pickAreaNote}> · the group sets this once</Text>
+        <Text style={styles.areaNote}>
+          {isHost
+            ? "Search stays in this town. A change is for everyone on this night."
+            : "The host set this town for the night."}
+        </Text>
       </View>
-      {searched ? (
-        <View style={styles.pickRes}>
-          <Text style={styles.pickResH}>Results</Text>
-          {results.length === 0 ? (
-            <>
-              <Text style={styles.pickRs}>Nothing in {area}.</Text>
-              <Pressable onPress={() => addResult(query.trim())} style={styles.pickR}>
-                <View style={styles.pickRb}>
-                  <Text style={styles.pickRn}>{query.trim()}</Text>
-                  <Text style={styles.pickRs}>Add it anyway</Text>
+      ) : null}
+
+      {isHost ? (
+        <>
+          <View style={[styles.pickSearch, searchFocused && styles.composerFocus]}>
+            <TextInput
+              value={query}
+              onChangeText={(text) => {
+                setQuery(text);
+                search(text);
+              }}
+              placeholder="Search a bar or restaurant"
+              placeholderTextColor={colors.dim}
+              style={styles.pickSearchField}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              onSubmitEditing={() => search(query, true)}
+              returnKeyType="search"
+            />
+            <Pressable
+              onPress={() => search(query, true)}
+              disabled={!query.trim()}
+              accessibilityRole="button"
+              accessibilityLabel="Search"
+              style={[styles.pickSearchBtn, !!query.trim() && styles.sendReady]}
+            >
+              <Svg width={16} height={16} viewBox="0 0 24 24">
+                <Circle
+                  cx={11}
+                  cy={11}
+                  r={6.5}
+                  fill="none"
+                  stroke={query.trim() ? colors.ink : colors.lamp}
+                  strokeWidth={1.8}
+                />
+                <Path
+                  d="M16 16l5 5"
+                  fill="none"
+                  stroke={query.trim() ? colors.ink : colors.lamp}
+                  strokeWidth={1.8}
+                  strokeLinecap="round"
+                />
+              </Svg>
+            </Pressable>
+          </View>
+          {searching ? <Text style={styles.areaNote}>Searching…</Text> : null}
+          {searched && !searching ? (
+            <View style={styles.pickRes}>
+              <Text style={styles.pickResH}>Add to the list</Text>
+              {searchHits.length === 0 ? (
+                <>
+                  <Text style={styles.pickEmpty}>Nothing in {area} matches that.</Text>
+                  {query.trim() && !already.has(query.trim().toLowerCase())
+                    ? placeRow({
+                        name: query.trim(),
+                        subtitle: "Not in the list. Add it anyway.",
+                      })
+                    : null}
+                </>
+              ) : (
+                searchHits.map((r) => placeRow(r))
+              )}
+              <Text style={styles.pickAttr}>
+                {source === "google" ? "Places data · Google" : "Places data · OpenStreetMap"}
+              </Text>
+            </View>
+          ) : null}
+        </>
+      ) : null}
+
+      <View style={styles.pickSection}>
+        <Text style={styles.pickTitle}>{title}</Text>
+        <Text style={styles.pickLead}>{lead}</Text>
+
+        {places.length > 0 ? (
+          <View style={styles.pickList}>
+            {places.map((place) => {
+              const taps = `${place.votes} ${place.votes === 1 ? "tap" : "taps"}`;
+              const canVote = readyToVote;
+              return (
+                <View
+                  key={place.name}
+                  style={[styles.pickOpt, place.mine && styles.pickOptOn, !canVote && styles.areaSaveOff]}
+                >
+                  <Pressable
+                    onPress={() => {
+                      if (!canVote) return;
+                      onVote(place.mine ? null : place.name);
+                    }}
+                    disabled={!canVote}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      !canVote
+                        ? `${place.name} is on the list. Waiting for more places before voting.`
+                        : place.mine
+                          ? `${place.name}, your pick, ${taps}. Tap to clear it.`
+                          : `${place.name}, ${taps}. Tap to vote for it.`
+                    }
+                    style={styles.pickVote}
+                  >
+                    <Text style={styles.pickName}>{place.name}</Text>
+                    <View style={styles.pickMeta}>
+                      {canVote && place.mine ? <Text style={styles.pickYou}>Your pick</Text> : null}
+                      {canVote ? (
+                        <Text style={[styles.pickN, place.mine && styles.pickNOn]}>{taps}</Text>
+                      ) : (
+                        <Text style={styles.pickYou}>On the list</Text>
+                      )}
+                    </View>
+                  </Pressable>
+                  {isHost && onRemove ? (
+                    <Pressable
+                      onPress={() => {
+                        void onRemove(place.name);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${place.name} from the vote`}
+                      hitSlop={8}
+                      style={styles.pickRemove}
+                    >
+                      <Text style={styles.pickRemoveText}>Remove</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
-                <Text style={styles.pickRadd}>+</Text>
-              </Pressable>
-            </>
-          ) : (
-            results.map((r) => (
-              <Pressable key={r.name} onPress={() => addResult(r.name)} style={styles.pickR}>
-                <View style={styles.pickRb}>
-                  <Text style={styles.pickRn}>{r.name}</Text>
-                  <Text style={styles.pickRs}>{r.subtitle}</Text>
-                </View>
-                <Text style={styles.pickRadd}>+</Text>
-              </Pressable>
-            ))
-          )}
-          <Text style={styles.pickAttr}>
-            {source === "google" ? "Places data · Google" : "Places data · OpenStreetMap"}
-          </Text>
+              );
+            })}
+          </View>
+        ) : null}
+      </View>
+
+      {isHost && !query.trim() ? (
+        <View style={[styles.pickRes, styles.pickSuggest]}>
+          <Text style={styles.pickResH}>Top places in {area}</Text>
+          {suggesting ? <Text style={styles.areaNote}>Finding places…</Text> : null}
+          {!suggesting && bars.length === 0 ? (
+            <Text style={styles.pickEmpty}>Nothing turned up. Try a search.</Text>
+          ) : null}
+          {bars.map((r) => placeRow(r))}
         </View>
       ) : null}
     </View>
@@ -1025,20 +1281,84 @@ export function PlacePage({
   area,
   places,
   pinnedPlace,
+  meetAt,
+  meetHour,
+  meetMinute,
+  isHost,
   onVote,
+  onAdd,
+  onRemove,
   onArea,
+  onMeet,
   onSearch,
+  onSuggest,
 }: {
   visible: boolean;
   onClose: () => void;
   area: string;
   places: PlaceVote[];
   pinnedPlace?: string | null;
+  meetAt?: string | null;
+  meetHour?: number | null;
+  meetMinute?: number | null;
+  isHost?: boolean;
   onVote: (name: string | null) => void;
-  onArea: (area: string) => void;
+  onAdd: (name: string) => void | Promise<void>;
+  onRemove?: (name: string) => void | Promise<void>;
+  onArea: (area: string) => void | Promise<void>;
+  onMeet?: (hour: number, minute: 0 | 30) => void | Promise<void>;
   onSearch: (query: string, area: string) => Promise<{ places: PlaceHit[]; source: string }>;
+  onSuggest: (area: string) => Promise<{ places: PlaceHit[]; source: string }>;
 }) {
   const insets = useSafeAreaInsets();
+  const [editingArea, setEditingArea] = useState(false);
+  const [savingArea, setSavingArea] = useState(false);
+  const [savingMeet, setSavingMeet] = useState(false);
+  const [areaDraft, setAreaDraft] = useState(area);
+  const meetLabel = formatMeetTime(meetAt);
+
+  useEffect(() => {
+    if (!editingArea) setAreaDraft(area);
+  }, [area, editingArea]);
+
+  useEffect(() => {
+    if (!visible) {
+      setEditingArea(false);
+      setAreaDraft(area);
+      setSavingMeet(false);
+    }
+  }, [visible, area]);
+
+  async function commitArea() {
+    if (!isHost) return;
+    const next = areaDraft.trim();
+    if (!next || next === area) {
+      setEditingArea(false);
+      setAreaDraft(area);
+      return;
+    }
+    setSavingArea(true);
+    try {
+      await onArea(next);
+      setEditingArea(false);
+    } catch {
+      setAreaDraft(next);
+    } finally {
+      setSavingArea(false);
+    }
+  }
+
+  async function pickMeet(hour: number, minute: 0 | 30) {
+    if (!isHost || !onMeet || savingMeet) return;
+    if (meetSlotSelected(meetHour, meetMinute, hour, minute)) return;
+    setSavingMeet(true);
+    try {
+      await onMeet(hour, minute);
+    } finally {
+      setSavingMeet(false);
+    }
+  }
+
   return (
     <Modal
       visible={visible}
@@ -1049,7 +1369,68 @@ export function PlacePage({
       <View style={[styles.placePage, Platform.OS === "web" ? { minHeight: "100%" } : null]}>
         <AmbientBackground />
         <View style={[styles.placePageBar, { paddingTop: Math.max(insets.top, 18) }]}>
-          <Text style={styles.placePageKicker}>Where</Text>
+          <View style={styles.placePageHead}>
+            <Text style={styles.placePageKicker}>Where</Text>
+            {editingArea && isHost ? (
+              <View style={styles.placeAreaEdit}>
+                <TextInput
+                  value={areaDraft}
+                  onChangeText={setAreaDraft}
+                  onSubmitEditing={() => {
+                    void commitArea();
+                  }}
+                  autoFocus
+                  maxLength={40}
+                  placeholder="Ballston Spa"
+                  placeholderTextColor={colors.dim}
+                  style={styles.placeAreaField}
+                />
+                <Pressable
+                  onPress={() => {
+                    void commitArea();
+                  }}
+                  disabled={savingArea || !areaDraft.trim() || areaDraft.trim() === area}
+                  accessibilityRole="button"
+                  accessibilityLabel="Save town"
+                  style={[
+                    styles.planEdit,
+                    (savingArea || !areaDraft.trim() || areaDraft.trim() === area) &&
+                      styles.areaSaveOff,
+                  ]}
+                >
+                  <Text style={styles.planEditText}>{savingArea ? "Saving" : "Save"}</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setAreaDraft(area);
+                    setEditingArea(false);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel"
+                  style={styles.planEdit}
+                >
+                  <Text style={styles.planEditText}>Cancel</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.placeAreaRow}>
+                <Text style={styles.placeAreaLabel}>Looking in</Text>
+                <Text style={styles.placeAreaName} numberOfLines={1}>
+                  {area}
+                </Text>
+                {isHost ? (
+                  <Pressable
+                    onPress={() => setEditingArea(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Change town, currently ${area}`}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.placeAreaChange}>Change</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            )}
+          </View>
           <Pressable
             onPress={onClose}
             accessibilityRole="button"
@@ -1067,14 +1448,49 @@ export function PlacePage({
           }}
           keyboardShouldPersistTaps="handled"
         >
+          <View style={styles.meetBlock}>
+            <Text style={styles.meetKicker}>Meet at</Text>
+            {isHost && onMeet ? (
+              <View style={styles.meetChips}>
+                {MEET_SLOTS.map((slot) => {
+                  const on = meetSlotSelected(meetHour, meetMinute, slot.hour, slot.minute);
+                  return (
+                    <Pressable
+                      key={`${slot.hour}:${slot.minute}`}
+                      onPress={() => {
+                        void pickMeet(slot.hour, slot.minute);
+                      }}
+                      disabled={savingMeet}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on }}
+                      accessibilityLabel={`Meet at ${slot.label} PM`}
+                      style={[styles.meetChip, on && styles.meetChipOn]}
+                    >
+                      <Text style={[styles.meetChipText, on && styles.meetChipTextOn]}>
+                        {slot.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={styles.meetValue}>
+                {meetLabel ? `${meetLabel}` : "Host hasn't set a time yet"}
+              </Text>
+            )}
+          </View>
           <PlacePicker
             page
             area={area}
             places={places}
             pinnedPlace={pinnedPlace}
+            isHost={isHost}
             onVote={onVote}
+            onAdd={onAdd}
+            onRemove={onRemove}
             onArea={onArea}
             onSearch={onSearch}
+            onSuggest={onSuggest}
           />
         </ScrollView>
       </View>
@@ -1243,7 +1659,13 @@ export function Linkish({
   style?: object;
 }) {
   return (
-    <Pressable onPress={onPress} style={style}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="link"
+      accessibilityLabel={label}
+      hitSlop={8}
+      style={style}
+    >
       <Text style={styles.linkish}>{label}</Text>
     </Pressable>
   );
@@ -1853,14 +2275,28 @@ const styles = StyleSheet.create({
     padding: 15,
     marginTop: 10,
   },
-  pickPage: { paddingTop: 8 },
+  pickPage: { paddingTop: 4 },
+  pickSection: {
+    marginTop: 22,
+  },
   placePage: { flex: 1, backgroundColor: colors.night },
   placePageBar: {
+    zIndex: 4,
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
+    gap: 10,
+    backgroundColor: colors.night,
     paddingHorizontal: spacing.screenX - 8,
-    paddingBottom: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  placePageHead: {
+    flex: 1,
+    paddingLeft: 8,
+    gap: 4,
+    minWidth: 0,
   },
   placePageKicker: {
     fontFamily: fonts.mono,
@@ -1868,19 +2304,104 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
     textTransform: "uppercase",
     color: colors.lamp,
-    paddingLeft: 8,
+  },
+  meetBlock: {
+    marginTop: 6,
+    marginBottom: 4,
+    gap: 10,
+  },
+  meetKicker: {
+    fontFamily: fonts.mono,
+    fontSize: 12,
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+    color: colors.dim,
+  },
+  meetValue: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 16,
+    color: colors.chalk,
+  },
+  meetChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  meetChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface2,
+  },
+  meetChipOn: {
+    borderColor: "rgba(223,139,50,0.55)",
+    backgroundColor: "rgba(223,139,50,0.12)",
+  },
+  meetChipText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+    color: colors.chalk,
+  },
+  meetChipTextOn: {
+    color: colors.lamp,
+  },
+  placeAreaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  placeAreaLabel: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.dim,
+  },
+  placeAreaName: {
+    flexShrink: 1,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+    color: colors.chalk,
+  },
+  placeAreaChange: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    color: colors.lamp,
+  },
+  placeAreaEdit: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  placeAreaField: {
+    flexGrow: 1,
+    flexBasis: 140,
+    minWidth: 120,
+    fontFamily: fonts.body,
+    fontSize: 14,
+    color: colors.chalk,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.lamp,
+    paddingVertical: 2,
+    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : null),
   },
   pickTitle: {
     fontFamily: fonts.bodyMedium,
     fontSize: 18,
     color: colors.chalk,
+    marginTop: 0,
   },
   pickLead: {
     fontFamily: fonts.body,
-    fontSize: 14.5,
+    fontSize: 14,
     lineHeight: 20,
-    color: colors.chalk,
+    color: colors.dim,
     marginTop: 6,
+    marginBottom: 16,
   },
   pickRule: {
     fontFamily: fonts.body,
@@ -1890,32 +2411,156 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 12,
   },
-  pickList: { gap: 7 },
+  pickList: { gap: 8 },
   pickOpt: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 11,
+    gap: 10,
     backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.line,
-    borderRadius: 12,
-    paddingVertical: 11,
-    paddingHorizontal: 13,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingLeft: 14,
+    paddingRight: 10,
+  },
+  pickVote: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+    minWidth: 0,
   },
   pickOptOn: {
-    borderColor: "rgba(223,139,50,0.5)",
-    backgroundColor: "rgba(223,139,50,0.08)",
+    borderColor: "rgba(223,139,50,0.55)",
+    backgroundColor: "rgba(223,139,50,0.1)",
   },
-  pickName: { flex: 1, fontFamily: fonts.body, fontSize: 14, color: colors.chalk },
+  pickName: { flex: 1, fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.chalk },
   pickMeta: { flexDirection: "row", alignItems: "center", gap: 8 },
   pickYou: {
     fontFamily: fonts.bodyMedium,
-    fontSize: 13,
+    fontSize: 12.5,
     color: colors.lamp,
   },
   pickN: { fontFamily: fonts.mono, fontSize: 12, color: colors.dim, minWidth: 12, textAlign: "right" },
   pickNOn: { color: colors.lamp },
-  pickAdd: { flexDirection: "row", gap: 8, marginTop: 10 },
+  pickRemove: {
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  pickRemoveText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12.5,
+    color: colors.dim,
+  },
+  addRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  addName: {
+    fontFamily: fonts.body,
+    fontSize: 15,
+    color: colors.chalk,
+  },
+  addSub: {
+    fontFamily: fonts.body,
+    fontSize: 12.5,
+    color: colors.dim,
+    marginTop: 2,
+  },
+  addBtn: {
+    borderWidth: 1,
+    borderColor: "rgba(223,139,50,0.35)",
+    borderRadius: radius.pill,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+  },
+  addBtnText: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 0.9,
+    textTransform: "uppercase",
+    color: colors.lamp,
+  },
+  pickSearch: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    minHeight: 58,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radius.pill,
+    paddingLeft: 20,
+    paddingRight: 8,
+    paddingVertical: 8,
+    ...(Platform.OS === "web"
+      ? ({
+          transitionProperty: "border-color, box-shadow",
+          transitionDuration: "180ms",
+          transitionTimingFunction: "ease",
+        } as object)
+      : null),
+  },
+  pickSearchField: {
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 16.5,
+    color: colors.chalk,
+    paddingVertical: 8,
+    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : null),
+  },
+  pickSearchBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.pane,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  areaCard: {
+    marginTop: 4,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 13,
+    gap: 10,
+  },
+  areaRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  areaKicker: {
+    fontFamily: fonts.mono,
+    fontSize: 9.5,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    color: colors.dim,
+  },
+  areaName: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 16,
+    color: colors.chalk,
+    marginTop: 3,
+  },
+  areaNote: {
+    fontFamily: fonts.body,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: colors.dim,
+  },
+  areaActions: { flexDirection: "row", gap: 8 },
+  areaSaveOff: { opacity: 0.4 },
+  pickEmpty: {
+    fontFamily: fonts.body,
+    fontSize: 13.5,
+    color: colors.dim,
+    marginBottom: 8,
+  },
   pickField: {
     flex: 1,
     backgroundColor: colors.surface2,
@@ -1948,14 +2593,20 @@ const styles = StyleSheet.create({
     textDecorationStyle: "dashed",
   },
   pickAreaNote: { fontFamily: fonts.body, fontSize: 12.5, color: colors.muted },
-  pickRes: { marginTop: 12, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 12 },
+  pickRes: { marginTop: 12, gap: 8 },
+  pickSuggest: {
+    marginTop: 28,
+    paddingTop: 18,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+  },
   pickResH: {
     fontFamily: fonts.mono,
     fontSize: 9.5,
     letterSpacing: 1.33,
     textTransform: "uppercase",
     color: colors.dim,
-    marginBottom: 9,
+    marginBottom: 4,
   },
   pickR: {
     flexDirection: "row",

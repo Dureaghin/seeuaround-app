@@ -8,6 +8,7 @@ import {
   RegisterPushSchema,
   SendCodeSchema,
   ThreadAreaSchema,
+  ThreadMeetSchema,
   ThreadMessageSchema,
   ThreadVoteSchema,
   DeleteAccountSchema,
@@ -33,11 +34,11 @@ import { query, withTransaction } from "../db.js";
 import { buildMeState } from "../me-state.js";
 import { runMatchingForUser } from "../matching.js";
 import { currentWeekDates } from "../week.js";
-import { queueNotification } from "../push.js";
+import { queueNotification, scheduleMeetReminders } from "../push.js";
 import { config, getDevAuthCode } from "../config.js";
-import { searchPlaces } from "../places.js";
+import { searchPlaces, suggestBars } from "../places.js";
 import { z } from "zod";
-import { computePauseUntil, isValidTimezone } from "../pause-until.js";
+import { computePauseUntil, isValidTimezone, zonedDateTime } from "../pause-until.js";
 
 const AUTH_SEND_CODE_LIMIT = {
   config: { rateLimit: { max: 5, timeWindow: "15 minutes" } },
@@ -67,10 +68,13 @@ const PLACE_SEARCH_LIMIT = {
   config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
 };
 
-const PlaceSearchSchema = z.object({
-  q: z.string().trim().min(1).max(80),
-  area: z.string().trim().min(1).max(40),
-});
+const PlaceSearchSchema = z
+  .object({
+    q: z.string().trim().min(1).max(80).optional(),
+    area: z.string().trim().min(1).max(40),
+    suggest: z.literal("bars").optional(),
+  })
+  .refine((data) => Boolean(data.q) || data.suggest === "bars");
 
 const GENERIC_AUTH_MSG = {
   ok: true,
@@ -170,8 +174,6 @@ async function verifyAuthCode(email: string, code: string): Promise<boolean> {
   return true;
 }
 
-const DEFAULT_PLACES = ["The Anchor", "Bar Nostra", "Wherever's open"];
-
 function voiceLabel(durationMs: number): string {
   const total = Math.max(1, Math.round(durationMs / 1000));
   const mins = Math.floor(total / 60);
@@ -205,30 +207,43 @@ async function isThreadMember(threadId: string, userId: string): Promise<boolean
 }
 
 async function loadThreadPlan(threadId: string, userId: string) {
-  const { rows: meta } = await query<{ area: string; pinned_place: string | null }>(
-    `SELECT area, pinned_place FROM threads WHERE id = $1`,
+  const { rows: meta } = await query<{
+    area: string;
+    pinned_place: string | null;
+    host_user_id: string | null;
+    meet_at: string | null;
+    host_timezone: string | null;
+  }>(
+    `SELECT t.area, t.pinned_place, t.host_user_id, t.meet_at,
+            COALESCE(NULLIF(hu.timezone, ''), 'America/New_York') AS host_timezone
+     FROM threads t
+     LEFT JOIN users hu ON hu.id = t.host_user_id
+     WHERE t.id = $1`,
     [threadId],
   );
-  let { rows: places } = await query<{ name: string; votes: number }>(
-    `SELECT name, votes FROM thread_places WHERE thread_id = $1
-     ORDER BY CASE name
-       WHEN 'The Anchor' THEN 0
-       WHEN 'Bar Nostra' THEN 1
-       WHEN 'Wherever''s open' THEN 2
-       ELSE 3
-     END, created_at ASC, name ASC`,
-    [threadId],
-  );
-  if (places.length === 0) {
-    await query(
-      `INSERT INTO thread_places (thread_id, name, votes, created_at)
-       SELECT $1, name, 0, clock_timestamp() + (ordinality * interval '1 millisecond')
-       FROM unnest($2::text[]) WITH ORDINALITY AS t(name, ordinality)
-       ON CONFLICT DO NOTHING`,
-      [threadId, DEFAULT_PLACES],
+  let hostId = meta[0]?.host_user_id ?? null;
+  if (!hostId) {
+    const { rows: hostRows } = await query<{ user_id: string }>(
+      `SELECT om.user_id FROM overlap_members om
+       JOIN threads t ON t.overlap_id = om.overlap_id
+       WHERE t.id = $1 AND om.response = 'in'
+       ORDER BY om.user_id ASC
+       LIMIT 1`,
+      [threadId],
     );
-    places = DEFAULT_PLACES.map((name) => ({ name, votes: 0 }));
+    hostId = hostRows[0]?.user_id ?? null;
+    if (hostId) {
+      await query(`UPDATE threads SET host_user_id = $2 WHERE id = $1 AND host_user_id IS NULL`, [
+        threadId,
+        hostId,
+      ]);
+    }
   }
+  const { rows: places } = await query<{ name: string; votes: number }>(
+    `SELECT name, votes FROM thread_places WHERE thread_id = $1
+     ORDER BY created_at ASC, name ASC`,
+    [threadId],
+  );
   const { rows: mine } = await query<{ place_name: string }>(
     `SELECT place_name FROM thread_votes WHERE thread_id = $1 AND user_id = $2`,
     [threadId, userId],
@@ -242,9 +257,31 @@ async function loadThreadPlan(threadId: string, userId: string) {
   if ((meta[0]?.pinned_place ?? null) !== pinned) {
     await query(`UPDATE threads SET pinned_place = $2 WHERE id = $1`, [threadId, pinned]);
   }
+
+  let meetHour: number | null = null;
+  let meetMinute: number | null = null;
+  const meetAt = meta[0]?.meet_at ?? null;
+  if (meetAt) {
+    const tz = meta[0]?.host_timezone || "America/New_York";
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: tz,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date(meetAt));
+    const hourRaw = Number(parts.find((part) => part.type === "hour")?.value);
+    const minuteRaw = Number(parts.find((part) => part.type === "minute")?.value);
+    meetHour = hourRaw === 24 ? 0 : hourRaw;
+    meetMinute = Number.isFinite(minuteRaw) ? minuteRaw : null;
+  }
+
   return {
     area: meta[0]?.area || "Saratoga Springs",
     pinnedPlace: pinned,
+    meetAt,
+    meetHour,
+    meetMinute,
+    isHost: Boolean(hostId && hostId === userId),
     places: places.map((place) => ({
       name: place.name,
       votes: place.votes,
@@ -253,23 +290,66 @@ async function loadThreadPlan(threadId: string, userId: string) {
   };
 }
 
+async function assertThreadHost(threadId: string, userId: string): Promise<boolean> {
+  const plan = await loadThreadPlan(threadId, userId);
+  return plan.isHost;
+}
+
 async function recomputePin(threadId: string, client: PoolClient) {
   const { rows } = await client.query<{ name: string }>(
     `SELECT name FROM thread_places
      WHERE thread_id = $1 AND votes > 0
-     ORDER BY votes DESC,
-       CASE name
-         WHEN 'The Anchor' THEN 0
-         WHEN 'Bar Nostra' THEN 1
-         WHEN 'Wherever''s open' THEN 2
-         ELSE 3
-       END,
-       created_at ASC, name ASC
+     ORDER BY votes DESC, created_at ASC, name ASC
      LIMIT 1`,
     [threadId],
   );
   const pinned = rows[0]?.name ?? null;
   await client.query(`UPDATE threads SET pinned_place = $2 WHERE id = $1`, [threadId, pinned]);
+}
+
+async function addThreadPlace(threadId: string, name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  await withTransaction(async (client) => {
+    const existing = await client.query<{ name: string }>(
+      `SELECT name FROM thread_places WHERE thread_id = $1 AND lower(name) = lower($2)`,
+      [threadId, trimmed],
+    );
+    if (existing.rows[0]) return;
+    const { rows: count } = await client.query<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM thread_places WHERE thread_id = $1`,
+      [threadId],
+    );
+    if (Number(count[0]?.n ?? 0) >= 8) {
+      throw Object.assign(new Error("too_many_places"), { statusCode: 400 });
+    }
+    await client.query(
+      `INSERT INTO thread_places (thread_id, name, votes) VALUES ($1, $2, 0)`,
+      [threadId, trimmed],
+    );
+  });
+}
+
+async function removeThreadPlace(threadId: string, name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  await withTransaction(async (client) => {
+    const existing = await client.query<{ name: string }>(
+      `SELECT name FROM thread_places WHERE thread_id = $1 AND lower(name) = lower($2)`,
+      [threadId, trimmed],
+    );
+    const placeName = existing.rows[0]?.name;
+    if (!placeName) return;
+    await client.query(
+      `DELETE FROM thread_votes WHERE thread_id = $1 AND place_name = $2`,
+      [threadId, placeName],
+    );
+    await client.query(`DELETE FROM thread_places WHERE thread_id = $1 AND name = $2`, [
+      threadId,
+      placeName,
+    ]);
+    await recomputePin(threadId, client);
+  });
 }
 
 async function castPlaceVote(threadId: string, userId: string, name: string) {
@@ -278,13 +358,10 @@ async function castPlaceVote(threadId: string, userId: string, name: string) {
       `SELECT name FROM thread_places WHERE thread_id = $1 AND lower(name) = lower($2)`,
       [threadId, name],
     );
-    const placeName = existing.rows[0]?.name ?? name;
     if (!existing.rows[0]) {
-      await client.query(
-        `INSERT INTO thread_places (thread_id, name, votes) VALUES ($1, $2, 0)`,
-        [threadId, placeName],
-      );
+      throw Object.assign(new Error("place_not_on_list"), { statusCode: 400 });
     }
+    const placeName = existing.rows[0].name;
     const prev = await client.query<{ place_name: string }>(
       `SELECT place_name FROM thread_votes WHERE thread_id = $1 AND user_id = $2`,
       [threadId, userId],
@@ -829,10 +906,18 @@ export async function registerRoutes(app: FastifyInstance) {
             `SELECT expires_at FROM "overlaps" WHERE id = $1`,
             [id],
           );
-          await query(`INSERT INTO threads (overlap_id, expires_at) VALUES ($1, $2)`, [
-            id,
-            overlapRows[0].expires_at,
-          ]);
+          const { rows: hostRows } = await query<{ user_id: string }>(
+            `SELECT user_id FROM overlap_members
+             WHERE overlap_id = $1 AND response = 'in' AND user_id <> $2
+             ORDER BY user_id ASC
+             LIMIT 1`,
+            [id, request.user!.id],
+          );
+          const hostId = hostRows[0]?.user_id ?? request.user!.id;
+          await query(
+            `INSERT INTO threads (overlap_id, expires_at, host_user_id) VALUES ($1, $2, $3)`,
+            [id, overlapRows[0].expires_at, hostId],
+          );
         }
       }
     }
@@ -947,7 +1032,42 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post("/places/search", { preHandler: authHook, ...PLACE_SEARCH_LIMIT }, async (request, reply) => {
     const parsed = PlaceSearchSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
-    return searchPlaces(parsed.data.q, parsed.data.area);
+    if (parsed.data.suggest === "bars") return suggestBars(parsed.data.area);
+    return searchPlaces(parsed.data.q!, parsed.data.area);
+  });
+
+  app.post("/threads/:id/places", { preHandler: authHook }, async (request, reply) => {
+    const parsed = ThreadVoteSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    const { id } = request.params as { id: string };
+    if (!(await isThreadMember(id, request.user!.id))) {
+      return reply.code(404).send({ error: "not_found" });
+    }
+    if (!(await assertThreadHost(id, request.user!.id))) {
+      return reply.code(403).send({ error: "host_only" });
+    }
+    try {
+      await addThreadPlace(id, parsed.data.name);
+    } catch (err) {
+      const status = (err as { statusCode?: number }).statusCode;
+      if (status === 400) return reply.code(400).send({ error: "too_many_places" });
+      throw err;
+    }
+    return { plan: await loadThreadPlan(id, request.user!.id) };
+  });
+
+  app.delete("/threads/:id/places", { preHandler: authHook }, async (request, reply) => {
+    const parsed = ThreadVoteSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    const { id } = request.params as { id: string };
+    if (!(await isThreadMember(id, request.user!.id))) {
+      return reply.code(404).send({ error: "not_found" });
+    }
+    if (!(await assertThreadHost(id, request.user!.id))) {
+      return reply.code(403).send({ error: "host_only" });
+    }
+    await removeThreadPlace(id, parsed.data.name);
+    return { plan: await loadThreadPlan(id, request.user!.id) };
   });
 
   app.post("/threads/:id/vote", { preHandler: authHook }, async (request, reply) => {
@@ -957,7 +1077,13 @@ export async function registerRoutes(app: FastifyInstance) {
     if (!(await isThreadMember(id, request.user!.id))) {
       return reply.code(404).send({ error: "not_found" });
     }
-    await castPlaceVote(id, request.user!.id, parsed.data.name);
+    try {
+      await castPlaceVote(id, request.user!.id, parsed.data.name);
+    } catch (err) {
+      const status = (err as { statusCode?: number }).statusCode;
+      if (status === 400) return reply.code(400).send({ error: "place_not_on_list" });
+      throw err;
+    }
     return { plan: await loadThreadPlan(id, request.user!.id) };
   });
 
@@ -974,6 +1100,12 @@ export async function registerRoutes(app: FastifyInstance) {
     const parsed = ThreadAreaSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
     const { id } = request.params as { id: string };
+    if (!(await isThreadMember(id, request.user!.id))) {
+      return reply.code(404).send({ error: "not_found" });
+    }
+    if (!(await assertThreadHost(id, request.user!.id))) {
+      return reply.code(403).send({ error: "host_only" });
+    }
     const { rowCount } = await query(
       `UPDATE threads t SET area = $3
        FROM overlap_members om
@@ -981,6 +1113,50 @@ export async function registerRoutes(app: FastifyInstance) {
       [id, request.user!.id, parsed.data.area],
     );
     if (!rowCount) return reply.code(404).send({ error: "not_found" });
+    return { plan: await loadThreadPlan(id, request.user!.id) };
+  });
+
+  app.post("/threads/:id/time", { preHandler: authHook }, async (request, reply) => {
+    const parsed = ThreadMeetSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    const { id } = request.params as { id: string };
+    if (!(await isThreadMember(id, request.user!.id))) {
+      return reply.code(404).send({ error: "not_found" });
+    }
+    if (!(await assertThreadHost(id, request.user!.id))) {
+      return reply.code(403).send({ error: "host_only" });
+    }
+
+    const { rows: ctx } = await query<{
+      night_date: string;
+      expires_at: string;
+      timezone: string;
+    }>(
+      `SELECT o.night_date::text, t.expires_at::text,
+              COALESCE(NULLIF(u.timezone, ''), 'America/New_York') AS timezone
+       FROM threads t
+       JOIN "overlaps" o ON o.id = t.overlap_id
+       JOIN users u ON u.id = $2
+       WHERE t.id = $1`,
+      [id, request.user!.id],
+    );
+    if (!ctx[0]) return reply.code(404).send({ error: "not_found" });
+
+    const night = ctx[0].night_date.slice(0, 10);
+    const meetAt = zonedDateTime(night, parsed.data.hour, parsed.data.minute, ctx[0].timezone);
+    if (meetAt.getTime() >= new Date(ctx[0].expires_at).getTime()) {
+      return reply.code(400).send({ error: "time_after_night" });
+    }
+
+    const { rowCount } = await query(
+      `UPDATE threads t SET meet_at = $3
+       FROM overlap_members om
+       WHERE t.id = $1 AND om.overlap_id = t.overlap_id AND om.user_id = $2 AND om.response = 'in'`,
+      [id, request.user!.id, meetAt.toISOString()],
+    );
+    if (!rowCount) return reply.code(404).send({ error: "not_found" });
+
+    await scheduleMeetReminders(id);
     return { plan: await loadThreadPlan(id, request.user!.id) };
   });
 

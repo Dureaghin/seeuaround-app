@@ -13,6 +13,7 @@ import {
   PersonRow,
   Screen,
   Sub,
+  Button,
   uiStyles,
 } from "../../src/components/ui";
 
@@ -32,6 +33,8 @@ export default function PeopleScreen() {
   const freeTonight = accepted.filter((c) => c.freeTonight);
   const notTonight = accepted.filter((c) => !c.freeTonight);
   const shortCode = me?.user?.shortCode ?? "";
+  const threadId = me?.activeThreadId ?? null;
+  const threadLabel = me?.activeThreadLabel?.trim() || "Tonight";
   const qrValue = useMemo(
     () => (shortCode ? `${SITE}/add?code=${encodeURIComponent(shortCode)}` : undefined),
     [shortCode],
@@ -65,6 +68,15 @@ export default function PeopleScreen() {
       <CodeCard copied={copied} onCopy={copyCode} qrValue={qrValue}>
         <Text style={uiStyles.codeMono}>{shortCode || "…"}</Text>
       </CodeCard>
+
+      {threadId ? (
+        <View style={{ marginTop: 18 }}>
+          <Button
+            label={`Open ${threadLabel}`}
+            onPress={() => router.push(`/thread/${threadId}`)}
+          />
+        </View>
+      ) : null}
 
       <Sub style={{ maxWidth: undefined }}>Invite only — both sides accept.</Sub>
       <View style={{ marginTop: 14, flexDirection: "row", alignItems: "center", gap: 8 }}>

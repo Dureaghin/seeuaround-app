@@ -36,6 +36,9 @@ export function pathFromNotification(data: Record<string, unknown>): string | nu
   }
   if (data.route === "sunday" || data.route === "nudge") return "/sunday";
   if (data.route === "people" || data.route === "hangout") return "/people";
+  if (data.route === "thread" && typeof data.threadId === "string") {
+    return `/thread/${data.threadId}`;
+  }
   if (data.route === "lock") return "/lock";
   return null;
 }

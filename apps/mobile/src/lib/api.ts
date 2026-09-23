@@ -16,8 +16,10 @@ async function request<T>(
   auth = true,
 ): Promise<T> {
   const method = (options.method ?? "GET").toUpperCase();
-  const sendsJson = ["POST", "PUT", "PATCH"].includes(method);
-  const body = options.body ?? (sendsJson ? "{}" : undefined);
+  const sendsJson =
+    ["POST", "PUT", "PATCH"].includes(method) ||
+    (method === "DELETE" && options.body != null);
+  const body = options.body ?? (["POST", "PUT", "PATCH"].includes(method) ? "{}" : undefined);
 
   const headers: Record<string, string> = {
     ...(sendsJson ? { "Content-Type": "application/json" } : {}),
@@ -150,6 +152,10 @@ export const api = {
       plan: {
         area: string;
         pinnedPlace: string | null;
+        meetAt: string | null;
+        meetHour: number | null;
+        meetMinute: number | null;
+        isHost: boolean;
         places: { name: string; votes: number; mine: boolean }[];
       };
       messages: {
@@ -176,10 +182,46 @@ export const api = {
       plan: {
         area: string;
         pinnedPlace: string | null;
+        meetAt: string | null;
+        meetHour: number | null;
+        meetMinute: number | null;
+        isHost: boolean;
         places: { name: string; votes: number; mine: boolean }[];
       };
     }>(`/threads/${id}/vote`, {
       method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+
+  addPlace: (id: string, name: string) =>
+    request<{
+      plan: {
+        area: string;
+        pinnedPlace: string | null;
+        meetAt: string | null;
+        meetHour: number | null;
+        meetMinute: number | null;
+        isHost: boolean;
+        places: { name: string; votes: number; mine: boolean }[];
+      };
+    }>(`/threads/${id}/places`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+
+  removePlace: (id: string, name: string) =>
+    request<{
+      plan: {
+        area: string;
+        pinnedPlace: string | null;
+        meetAt: string | null;
+        meetHour: number | null;
+        meetMinute: number | null;
+        isHost: boolean;
+        places: { name: string; votes: number; mine: boolean }[];
+      };
+    }>(`/threads/${id}/places`, {
+      method: "DELETE",
       body: JSON.stringify({ name }),
     }),
 
@@ -188,6 +230,10 @@ export const api = {
       plan: {
         area: string;
         pinnedPlace: string | null;
+        meetAt: string | null;
+        meetHour: number | null;
+        meetMinute: number | null;
+        isHost: boolean;
         places: { name: string; votes: number; mine: boolean }[];
       };
     }>(`/threads/${id}/vote`, { method: "DELETE" }),
@@ -197,11 +243,31 @@ export const api = {
       plan: {
         area: string;
         pinnedPlace: string | null;
+        meetAt: string | null;
+        meetHour: number | null;
+        meetMinute: number | null;
+        isHost: boolean;
         places: { name: string; votes: number; mine: boolean }[];
       };
     }>(`/threads/${id}/area`, {
       method: "POST",
       body: JSON.stringify({ area }),
+    }),
+
+  setMeetTime: (id: string, hour: number, minute: 0 | 30) =>
+    request<{
+      plan: {
+        area: string;
+        pinnedPlace: string | null;
+        meetAt: string | null;
+        meetHour: number | null;
+        meetMinute: number | null;
+        isHost: boolean;
+        places: { name: string; votes: number; mine: boolean }[];
+      };
+    }>(`/threads/${id}/time`, {
+      method: "POST",
+      body: JSON.stringify({ hour, minute }),
     }),
 
   searchPlaces: (q: string, area: string) =>
@@ -210,6 +276,15 @@ export const api = {
       {
         method: "POST",
         body: JSON.stringify({ q, area }),
+      },
+    ),
+
+  suggestBars: (area: string) =>
+    request<{ places: { name: string; subtitle: string }[]; source: "google" | "openstreetmap" }>(
+      "/places/search",
+      {
+        method: "POST",
+        body: JSON.stringify({ area, suggest: "bars" }),
       },
     ),
 
