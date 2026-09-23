@@ -7,13 +7,13 @@ import { useCopyFeedback } from "../../src/lib/copy-feedback";
 import { useApp } from "../../src/context/AppContext";
 import { TabEyebrow } from "../../src/components/AccountSheet";
 import {
+  ActiveThreadLink,
   CodeCard,
   GroupHeader,
   Linkish,
   PersonRow,
   Screen,
   Sub,
-  Button,
   uiStyles,
 } from "../../src/components/ui";
 
@@ -27,7 +27,8 @@ export default function PeopleScreen() {
 
   useEffect(() => {
     api.getConnections().then((r) => setConnections(r.connections)).catch(() => {});
-  }, []);
+    void refresh();
+  }, [refresh]);
 
   const accepted = connections.filter((c) => c.status === "accepted");
   const freeTonight = accepted.filter((c) => c.freeTonight);
@@ -35,6 +36,8 @@ export default function PeopleScreen() {
   const shortCode = me?.user?.shortCode ?? "";
   const threadId = me?.activeThreadId ?? null;
   const threadLabel = me?.activeThreadLabel?.trim() || "Tonight";
+  const threadNames = me?.activeThreadNames ?? [];
+  const showThread = Boolean(threadId && me?.activeThreadNightDate);
   const qrValue = useMemo(
     () => (shortCode ? `${SITE}/add?code=${encodeURIComponent(shortCode)}` : undefined),
     [shortCode],
@@ -69,21 +72,21 @@ export default function PeopleScreen() {
         <Text style={uiStyles.codeMono}>{shortCode || "…"}</Text>
       </CodeCard>
 
-      {threadId ? (
-        <View style={{ marginTop: 18 }}>
-          <Button
-            label={`Open ${threadLabel}`}
-            onPress={() => router.push(`/thread/${threadId}`)}
-          />
-        </View>
-      ) : null}
-
       <Sub style={{ maxWidth: undefined }}>Invite only — both sides accept.</Sub>
       <View style={{ marginTop: 14, flexDirection: "row", alignItems: "center", gap: 8 }}>
         <Linkish label="Invite someone" onPress={() => router.push("/invite")} />
         <Text style={uiStyles.peopleSep}>·</Text>
         <Linkish label="Add by code" onPress={() => router.push("/add-code")} />
       </View>
+
+      {showThread ? (
+        <ActiveThreadLink
+          label={threadLabel}
+          names={threadNames}
+          onPress={() => router.push(`/thread/${threadId}`)}
+          style={{ marginTop: 22 }}
+        />
+      ) : null}
 
       {freeTonight.length > 0 ? (
         <>

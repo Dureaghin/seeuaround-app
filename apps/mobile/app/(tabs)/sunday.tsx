@@ -8,6 +8,7 @@ import { TabEyebrow } from "../../src/components/AccountSheet";
 import {
   ErrText,
   Actions,
+  ActiveThreadLink,
   Button,
   Headline,
   NightStrip,
@@ -23,14 +24,15 @@ type Night = { date: string; label: string; free: boolean };
 
 export default function SundayScreen() {
   const router = useRouter();
-  const { me } = useApp();
+  const { me, refresh } = useApp();
   const [nights, setNights] = useState<Night[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     api.getWeek().then((r) => setNights(r.nights)).catch(() => {});
-  }, []);
+    void refresh();
+  }, [refresh]);
 
   function toggle(i: number) {
     setError("");
@@ -54,23 +56,36 @@ export default function SundayScreen() {
   const eyebrow = me?.weekSet ? "This week" : "Sunday";
   const threadId = me?.activeThreadId ?? null;
   const threadLabel = me?.activeThreadLabel?.trim() || "Tonight";
+  const threadNames = me?.activeThreadNames ?? [];
+  const threadNight = me?.activeThreadNightDate ?? null;
+  // Only the hangout night counts — not "any night lit".
+  const hangoutNightLit = nights.some((n) => {
+    if (!n.free) return false;
+    if (threadNight && n.date === threadNight) return true;
+    const day = threadLabel.trim().toLowerCase();
+    if (!day || day === "tonight") return false;
+    const short = n.label.trim().toLowerCase();
+    return day.startsWith(short) || short.startsWith(day.slice(0, 3));
+  });
+  const showThread = Boolean(threadId && hangoutNightLit);
 
   return (
     <Screen>
       <TabEyebrow>{eyebrow}</TabEyebrow>
-      {threadId ? (
-        <View style={{ marginBottom: 18 }}>
-          <Button
-            label={`Open ${threadLabel}`}
-            onPress={() => router.push(`/thread/${threadId}`)}
-          />
-        </View>
-      ) : null}
       <Headline>Which nights are you free?</Headline>
       <Sub>Tap the nights you're up for. Clears Monday morning.</Sub>
 
       <NightStrip nights={nights} onToggle={toggle} />
       <WeekTally count={litCount} />
+
+      {showThread ? (
+        <ActiveThreadLink
+          label={threadLabel}
+          names={threadNames}
+          onPress={() => router.push(`/thread/${threadId}`)}
+          style={{ marginTop: 20 }}
+        />
+      ) : null}
 
       <Spacer />
       {error ? <ErrText>{error}</ErrText> : null}

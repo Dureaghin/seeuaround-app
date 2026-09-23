@@ -48,6 +48,8 @@ export const MeStateSchema = z.object({
   unansweredOverlapId: z.string().uuid().nullable(),
   activeThreadId: z.string().uuid().nullable(),
   activeThreadLabel: z.string().nullable().optional(),
+  activeThreadNames: z.array(z.string()).optional(),
+  activeThreadNightDate: z.string().nullable().optional(),
   pendingHangoutCheck: z
     .object({
       overlapId: z.string().uuid(),

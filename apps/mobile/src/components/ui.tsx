@@ -1659,6 +1659,42 @@ export function QuietLink({ label, onPress }: { label: string; onPress: () => vo
   );
 }
 
+/** Slim entry to the live hangout thread — secondary to page actions like Save. */
+export function ActiveThreadLink({
+  label,
+  names,
+  onPress,
+  style,
+}: {
+  label: string;
+  names?: string[];
+  onPress: () => void;
+  style?: object;
+}) {
+  const who = (names ?? []).filter(Boolean).slice(0, 3).join(", ");
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="link"
+      accessibilityLabel={who ? `Open ${label} thread with ${who}` : `Open ${label} thread`}
+      style={[styles.threadJump, style]}
+    >
+      <View style={styles.threadJumpBody}>
+        <Text style={styles.threadJumpKicker}>Thread</Text>
+        <Text style={styles.threadJumpTitle} numberOfLines={1}>
+          {label}
+        </Text>
+        {who ? (
+          <Text style={styles.threadJumpNames} numberOfLines={1}>
+            {who}
+          </Text>
+        ) : null}
+      </View>
+      <Text style={styles.threadJumpAction}>Open</Text>
+    </Pressable>
+  );
+}
+
 export function Linkish({
   label,
   onPress,
@@ -2783,6 +2819,47 @@ const styles = StyleSheet.create({
     textAlign: "center",
     textDecorationLine: "underline",
     textDecorationColor: "rgba(169,161,152,0.45)",
+  },
+  threadJump: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 12,
+    backgroundColor: colors.surface2,
+  },
+  threadJumpBody: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  threadJumpKicker: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    color: colors.lamp,
+  },
+  threadJumpTitle: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 15,
+    color: colors.chalk,
+  },
+  threadJumpNames: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.dim,
+    marginTop: 1,
+  },
+  threadJumpAction: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: colors.lamp,
   },
   linkish: {
     fontFamily: fonts.body,
