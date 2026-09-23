@@ -94,7 +94,7 @@ export default function SundayScreen() {
       </Actions>
       <View style={uiStyles.weekFoot}>
         <Text style={uiStyles.quiethours}>
-          Answer whenever.{"\n"}Quiet until 8am their time.
+          Answer whenever. Nobody gets pinged before 8am their time.
         </Text>
         <QuietLink label="Sit this week out" onPress={() => router.push("/pause")} />
       </View>

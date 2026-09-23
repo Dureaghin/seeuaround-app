@@ -2815,10 +2815,10 @@ const styles = StyleSheet.create({
   quiet: {
     fontFamily: fonts.body,
     fontSize: 13,
-    color: colors.dim,
+    color: colors.muted,
     textAlign: "center",
     textDecorationLine: "underline",
-    textDecorationColor: "rgba(169,161,152,0.45)",
+    textDecorationColor: "rgba(169,161,152,0.35)",
   },
   threadJump: {
     flexDirection: "row",
@@ -2875,15 +2875,18 @@ const styles = StyleSheet.create({
   err: { fontFamily: fonts.body, fontSize: 13, color: colors.danger, marginTop: 14 },
   weekFoot: {
     alignItems: "center",
-    marginTop: 16,
-    gap: 2,
+    marginTop: 22,
+    gap: 16,
+    paddingHorizontal: spacing.screenX,
   },
   quiethours: {
-    fontFamily: fonts.body,
-    fontSize: 13,
-    color: colors.dim,
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    letterSpacing: 0.3,
+    color: colors.muted,
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 17,
+    maxWidth: 300,
   },
   later: {
     fontFamily: fonts.body,
