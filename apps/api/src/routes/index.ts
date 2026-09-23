@@ -967,11 +967,22 @@ export async function registerRoutes(app: FastifyInstance) {
       [id],
     );
 
+    const { rows: members } = await query<{ id: string; first_name: string }>(
+      `SELECT u.id, u.first_name
+       FROM overlap_members om
+       JOIN threads t ON t.overlap_id = om.overlap_id
+       JOIN users u ON u.id = om.user_id
+       WHERE t.id = $1 AND om.response = 'in' AND u.first_name <> ''
+       ORDER BY (u.id = $2) DESC, u.first_name ASC`,
+      [id, request.user!.id],
+    );
+
     return {
       id,
       expiresAt: threadRows[0].expires_at,
       nightDate: threadRows[0].night_date.slice(0, 10),
       plan: await loadThreadPlan(id, request.user!.id),
+      members: members.map((m) => ({ id: m.id, firstName: m.first_name })),
       messages: messages.map((m) => ({
         id: m.id,
         userId: m.user_id,

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Alert, Platform, Pressable, Text } from "react-native";
+import { Alert, Platform, Text } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { INVITE_MAX_USES, INVITE_TTL_DAYS } from "@seeuaround/shared";
 import { api } from "../../src/lib/api";
@@ -168,25 +168,23 @@ export default function InviteScreen() {
     ? creating
       ? "Making link…"
       : "Make a new link"
-    : hasPeople
-      ? "See who's here"
-      : shareAvailable
-        ? "Share the link"
-        : copied
-          ? "Link copied"
-          : "Copy the link";
+    : shareAvailable
+      ? "Share the link"
+      : copied
+        ? "Link copied"
+        : "Copy the link";
 
   async function onPrimary() {
     if (!hasLink) {
       await makeNewLink();
       return;
     }
-    if (hasPeople) {
-      await refresh();
-      router.push("/people");
-      return;
-    }
     await shareOrCopy();
+  }
+
+  async function goPeople() {
+    await refresh();
+    router.push("/people");
   }
 
   return (
@@ -209,19 +207,12 @@ export default function InviteScreen() {
 
           <Panel>
             <LinkRow label="Expires" value={expiresLabel} />
-            <LinkRow label="Uses left" value={usesLabel} />
-            <Pressable
-              style={uiStyles.linkctlKill}
-              onPress={turnOff}
-              disabled={revoking}
-              accessibilityRole="button"
-              accessibilityLabel="Turn this link off"
-            >
-              <Text style={uiStyles.linkctlKillText}>
-                {revoking ? "Turning off…" : "Turn this link off"}
-              </Text>
-            </Pressable>
+            <LinkRow label="Uses left" value={usesLabel} last />
           </Panel>
+          <QuietLink
+            label={revoking ? "Turning off…" : "Turn this link off"}
+            onPress={turnOff}
+          />
         </>
       ) : (
         <Panel style={{ paddingTop: 16 }}>
@@ -242,43 +233,13 @@ export default function InviteScreen() {
           loading={creating || revoking}
           disabled={creating || revoking}
         />
-        {hasPeople && hasLink ? (
-          <Button
-            label={
-              shareAvailable ? "Share another invite" : copied ? "Link copied" : "Copy the link"
-            }
-            onPress={shareOrCopy}
-            variant="ghost"
-          />
-        ) : hasPeople && !hasLink ? (
-          <Button
-            label="See who's here"
-            onPress={async () => {
-              await refresh();
-              router.push("/people");
-            }}
-            variant="ghost"
-          />
-        ) : hasLink && !hasPeople ? (
-          <Button
-            label="See who's here"
-            onPress={async () => {
-              await refresh();
-              router.push("/people");
-            }}
-            variant="ghost"
-          />
+        {hasPeople ? (
+          <Button label="See who's here" onPress={goPeople} variant="ghost" />
         ) : null}
       </Actions>
 
       {copied && hasLink && !hasPeople ? (
-        <QuietLink
-          label="Sent it? Check People"
-          onPress={async () => {
-            await refresh();
-            router.push("/people");
-          }}
-        />
+        <QuietLink label="Sent it? Check People" onPress={goPeople} />
       ) : null}
     </Screen>
   );

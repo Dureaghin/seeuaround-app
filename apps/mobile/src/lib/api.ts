@@ -150,6 +150,7 @@ export const api = {
       id: string;
       expiresAt: string;
       nightDate: string;
+      members: { id: string; firstName: string }[];
       plan: {
         area: string;
         pinnedPlace: string | null;

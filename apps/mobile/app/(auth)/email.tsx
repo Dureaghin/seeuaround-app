@@ -5,6 +5,7 @@ import { colors, fonts, spacing } from "../../src/lib/theme";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ApiError, api } from "../../src/lib/api";
 import { recallAuthEmail, rememberAuthEmail } from "../../src/lib/auth-email";
+import { armResendCooldown } from "../../src/lib/resend-timer";
 import {
   isValidFriendCode,
   normalizeFriendCode,
@@ -74,6 +75,7 @@ export default function EmailScreen() {
     setLoading(true);
     try {
       await api.sendCode(trimmedEmail);
+      armResendCooldown();
       rememberAuthEmail(trimmedEmail);
       if (typeof sessionStorage !== "undefined") {
         sessionStorage.setItem("seeuaround_marketing_opt_in", optIn ? "1" : "0");

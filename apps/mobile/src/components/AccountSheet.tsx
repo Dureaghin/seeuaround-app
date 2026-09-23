@@ -162,7 +162,7 @@ export function AccountSheet({
               <Text style={styles.eyebrow}>Account</Text>
               <Headline>Your account</Headline>
               <Sub style={{ maxWidth: undefined, marginTop: 13 }}>
-                You'll need a new code to get back in. Nothing is deleted when you sign out.
+                Signing out keeps everything. You'll sign back in with an email code.
               </Sub>
               {me?.user?.shortCode ? (
                 <Text style={styles.note}>Your code is {me.user.shortCode}.</Text>

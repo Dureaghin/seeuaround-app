@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { routeToPath } from "../../src/lib/resolveRoute";
@@ -16,6 +16,7 @@ import {
   resolveFriendCodeParam,
 } from "../../src/lib/friend-code";
 import { applyPendingInvite } from "../../src/lib/invite-pending";
+import { armResendCooldown, remainingResendSec } from "../../src/lib/resend-timer";
 import {
   Actions,
   Button,
@@ -56,7 +57,8 @@ export default function CodeScreen() {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [resendSec, setResendSec] = useState(42);
+  const [resendSec, setResendSec] = useState(remainingResendSec);
+  const submitted = useRef("");
 
   useEffect(() => {
     const t = setInterval(() => setResendSec((s) => (s <= 0 ? 0 : s - 1)), 1000);
@@ -101,12 +103,19 @@ export default function CodeScreen() {
     }
   }
 
+  useEffect(() => {
+    if (code.length !== 6 || submitted.current === code || loading) return;
+    submitted.current = code;
+    void onVerify();
+  }, [code, loading]);
+
   async function onResend() {
     if (resendSec > 0 || !email.includes("@")) return;
     setError("");
     try {
       await api.sendCode(email);
-      setResendSec(42);
+      armResendCooldown();
+      setResendSec(remainingResendSec());
     } catch {
       setError("Could not resend. Try again.");
     }

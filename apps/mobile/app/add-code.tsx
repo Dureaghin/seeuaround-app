@@ -18,6 +18,7 @@ import {
   ErrText,
   Eyebrow,
   Headline,
+  Linkish,
   Screen,
   Spacer,
   Sub,
@@ -40,11 +41,11 @@ export default function AddByCodeScreen() {
     if (presetCode) setCode(presetCode);
   }, [presetCode]);
 
-  async function onConnect() {
+  async function onConnect(nextCode = code) {
     setLoading(true);
     setError("");
     try {
-      await connectWithFriendCode(code);
+      await connectWithFriendCode(nextCode);
       const state = await refresh();
       router.replace(routeToPath(state!) as never);
     } catch (err) {
@@ -81,6 +82,7 @@ export default function AddByCodeScreen() {
     }
     setError("");
     setCode(next);
+    void onConnect(next);
   }
 
   return (
@@ -91,28 +93,38 @@ export default function AddByCodeScreen() {
         You connect with them — not their whole circle. Nothing happens until you both accept.
       </Sub>
 
-      <TextField
-        value={code}
-        onChangeText={(v) => {
-          setCode(normalizeFriendCode(v));
-          setError("");
-        }}
-        placeholder="SU-XXXX-XXXX"
-        autoCapitalize="characters"
-        maxLength={12}
-      />
+      <View style={styles.fieldRow}>
+        <View style={styles.field}>
+          <TextField
+            value={code}
+            onChangeText={(v) => {
+              setCode(normalizeFriendCode(v));
+              setError("");
+            }}
+            placeholder="SU-XXXX-XXXX"
+            autoCapitalize="characters"
+            autoFocus
+            maxLength={12}
+            returnKeyType="done"
+            enterKeyHint="done"
+            onSubmitEditing={() => {
+              if (code.replace(/[^A-Z0-9]/g, "").length >= 10) void onConnect();
+            }}
+            accessibilityLabel="Friend code"
+          />
+        </View>
+        <Linkish label="Scan" onPress={openScanner} style={styles.scanLink} />
+      </View>
       {error ? <ErrText>{error}</ErrText> : null}
 
       <Spacer />
       <Actions>
-        <Button label="Scan a code" variant="ghost" onPress={openScanner} />
         <Button
           label="Connect"
-          onPress={onConnect}
+          onPress={() => void onConnect()}
           loading={loading}
           disabled={code.replace(/[^A-Z0-9]/g, "").length < 10}
         />
-        <Button label="Cancel" variant="ghost" onPress={() => router.back()} />
       </Actions>
 
       <Modal visible={scanning} animationType="slide" onRequestClose={() => setScanning(false)}>
@@ -133,6 +145,13 @@ export default function AddByCodeScreen() {
 }
 
 const styles = StyleSheet.create({
+  fieldRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 12,
+  },
+  field: { flex: 1, minWidth: 0 },
+  scanLink: { marginBottom: 4 },
   scan: { flex: 1, backgroundColor: colors.night },
   scanClose: {
     position: "absolute",

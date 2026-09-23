@@ -63,7 +63,14 @@ export default function NameScreen() {
         }}
         placeholder="Alex"
         autoCapitalize="words"
+        autoFocus
         maxLength={24}
+        returnKeyType="done"
+        enterKeyHint="done"
+        onSubmitEditing={() => {
+          if (name.trim()) void save();
+        }}
+        accessibilityLabel="First name"
       />
       {error ? <ErrText>{error}</ErrText> : null}
       <Spacer />

@@ -230,6 +230,11 @@ export function OtpInput({
   const [focused, setFocused] = useState<number | null>(null);
   const digits = value.padEnd(6, " ").slice(0, 6).split("");
 
+  useEffect(() => {
+    const t = setTimeout(() => refs.current[0]?.focus(), 80);
+    return () => clearTimeout(t);
+  }, []);
+
   function updateAt(index: number, char: string) {
     const next = digits.map((d, i) => (i === index ? char : d === " " ? "" : d));
     if (char && index < 5) refs.current[index + 1]?.focus();
@@ -415,6 +420,7 @@ export function CodeCard({
   copied = false,
   onCopy,
   qrValue,
+  compact = false,
 }: {
   children: React.ReactNode;
   copyLabel?: string;
@@ -423,11 +429,12 @@ export function CodeCard({
   onCopy?: () => void;
   /** When set, a scannable QR sits beside the code (e.g. deep link to add-by-code). */
   qrValue?: string;
+  compact?: boolean;
 }) {
   return (
-    <View style={styles.codeCard}>
+    <View style={[styles.codeCard, compact && styles.codeCardCompact]}>
       <View style={styles.codeCardRow}>
-        {qrValue ? (
+        {qrValue && !compact ? (
           <View style={styles.qrPad} accessibilityLabel="QR code for this invite code">
             <QRCode
               value={qrValue}
@@ -459,9 +466,17 @@ export function CodeCard({
   );
 }
 
-export function LinkRow({ label, value }: { label: string; value: string }) {
+export function LinkRow({
+  label,
+  value,
+  last = false,
+}: {
+  label: string;
+  value: string;
+  last?: boolean;
+}) {
   return (
-    <View style={styles.linkctlR}>
+    <View style={[styles.linkctlR, last && styles.linkctlRLast]}>
       <Text style={styles.linkctlK}>{label}</Text>
       <Text style={styles.linkctlV}>{value}</Text>
     </View>
@@ -502,27 +517,50 @@ export function PersonRow({
   onNudge?: () => void;
   onBlock?: () => void;
 }) {
+  const [menu, setMenu] = useState(false);
   return (
     <View style={styles.person}>
-      <View style={[styles.dot, free && styles.dotFree]} />
-      <Text style={[styles.personName, free ? styles.personNameFree : styles.personNameDim]}>
-        {name}
-      </Text>
+      <Pressable
+        style={styles.personMain}
+        onLongPress={onBlock}
+        delayLongPress={400}
+        disabled={!onBlock}
+        accessibilityRole={onBlock ? "button" : undefined}
+        accessibilityLabel={onBlock ? `${name}. Long press to block` : name}
+      >
+        <View style={[styles.dot, free && styles.dotFree]} />
+        <Text style={[styles.personName, free ? styles.personNameFree : styles.personNameDim]}>
+          {name}
+        </Text>
+      </Pressable>
       {onBlock ? (
-        <Pressable
-          onPress={onBlock}
-          hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
-          accessibilityRole="button"
-          accessibilityLabel={`Block ${name}`}
-        >
-          <Text style={styles.removeText}>Block</Text>
-        </Pressable>
+        menu ? (
+          <Pressable
+            onPress={onBlock}
+            hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel={`Block ${name}`}
+          >
+            <Text style={styles.removeText}>Block</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={() => setMenu(true)}
+            hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel={`More actions for ${name}`}
+          >
+            <Text style={styles.removeText}>···</Text>
+          </Pressable>
+        )
       ) : null}
       {nudge ? (
         <Pressable
           onPress={onNudge}
           disabled={nudged}
           style={[styles.nudge, nudged && styles.nudgeDone]}
+          accessibilityRole="button"
+          accessibilityLabel={nudged ? `Nudged ${name}` : `Nudge ${name}`}
         >
           <Text style={[styles.nudgeText, nudged && styles.nudgeTextDone]}>
             {nudged ? "Nudged" : "Nudge"}
@@ -566,11 +604,15 @@ export function NightStrip({
   );
 }
 
-export function WeekTally({ count }: { count: number }) {
+export function WeekTally({ count, saveLabel }: { count: number; saveLabel?: string }) {
+  const status = saveLabel ? (
+    <Text style={styles.tallySaved}> · {saveLabel}</Text>
+  ) : null;
   if (count === 0) {
     return (
       <Text style={styles.tally}>
         <Text style={styles.tallyBold}>Nobody</Text> can find you this week.
+        {status}
       </Text>
     );
   }
@@ -578,6 +620,7 @@ export function WeekTally({ count }: { count: number }) {
   return (
     <Text style={styles.tally}>
       <Text style={styles.tallyBold}>{nightsLabel}</Text> lit
+      {status}
     </Text>
   );
 }
@@ -773,9 +816,9 @@ export function PlanBar({
       <Pressable
         style={styles.planEdit}
         onPress={onWherePress}
-        accessibilityLabel="Where"
+        accessibilityLabel="Edit plan"
       >
-        <Text style={styles.planEditText}>Where</Text>
+        <Text style={styles.planEditText}>Plan</Text>
       </Pressable>
     </View>
   );
@@ -828,8 +871,8 @@ export function CompactThreadBar({
           </Svg>
         </Pressable>
       ) : null}
-      <Pressable style={styles.planEdit} onPress={onWherePress} accessibilityLabel="Where">
-        <Text style={styles.planEditText}>Where</Text>
+      <Pressable style={styles.planEdit} onPress={onWherePress} accessibilityLabel="Edit plan">
+        <Text style={styles.planEditText}>Plan</Text>
       </Pressable>
       {onClose ? (
         <Pressable
@@ -1665,6 +1708,8 @@ export function Composer({
         onPress={onSend}
         disabled={!ready}
         style={[styles.send, ready && styles.sendReady]}
+        accessibilityRole="button"
+        accessibilityLabel="Send"
       >
         <Svg width={15} height={15} viewBox="0 0 24 24">
           <Path
@@ -1737,7 +1782,7 @@ export function Linkish({
       accessibilityRole="link"
       accessibilityLabel={label}
       hitSlop={8}
-      style={style}
+      style={[styles.linkishHit, style]}
     >
       <Text style={styles.linkish}>{label}</Text>
     </Pressable>
@@ -2069,6 +2114,11 @@ const styles = StyleSheet.create({
     padding: 19,
     marginTop: 20,
   },
+  codeCardCompact: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 28,
+  },
   codeCardRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2115,6 +2165,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
   },
+  linkctlRLast: {
+    borderBottomWidth: 0,
+    paddingBottom: 0,
+  },
   linkctlK: { fontFamily: fonts.body, fontSize: 13, color: colors.dim },
   linkctlV: {
     fontFamily: fonts.mono,
@@ -2138,12 +2192,13 @@ const styles = StyleSheet.create({
     letterSpacing: 1.47,
     textTransform: "uppercase",
     color: "#948D85",
-    marginTop: 24,
-    paddingBottom: 9,
+    marginTop: 16,
+    paddingBottom: 6,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(250,247,242,0.075)",
   },
-  person: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 13 },
+  person: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 7 },
+  personMain: { flex: 1, flexDirection: "row", alignItems: "center", gap: 12 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#000000" },
   dotFree: {
     backgroundColor: colors.lamp,
@@ -2222,6 +2277,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   tallyBold: { color: colors.chalk, fontFamily: fonts.monoMedium },
+  tallySaved: { color: colors.lamp, fontFamily: fonts.mono },
   overlapRows: { marginTop: 24, gap: 13, flexDirection: "column" },
   overlapRow: { flexDirection: "row", alignItems: "center", gap: 13 },
   who: { width: 52, fontFamily: fonts.body, fontSize: 13, color: colors.dim },
@@ -2888,6 +2944,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.lamp,
   },
+  linkishHit: {
+    minHeight: 44,
+    justifyContent: "center",
+  },
   linkish: {
     fontFamily: fonts.body,
     fontSize: 14,
@@ -2898,6 +2958,30 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 14,
     color: colors.muted,
+  },
+  blockUndo: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 18,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  blockUndoText: {
+    fontFamily: fonts.body,
+    fontSize: 13.5,
+    color: colors.chalk,
+    flex: 1,
+  },
+  blockUndoAction: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13.5,
+    color: colors.lamp,
   },
   err: { fontFamily: fonts.body, fontSize: 13, color: colors.danger, marginTop: 14 },
   weekFoot: {

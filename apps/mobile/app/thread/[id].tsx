@@ -220,7 +220,20 @@ export default function ThreadScreen() {
     };
   }, [thread?.expiresAt]);
 
+  function closeThread() {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/people");
+  }
+
   const memberNames = useMemo(() => {
+    const fromMembers = (thread?.members ?? [])
+      .filter((m) => m.id !== me?.user?.id)
+      .map((m) => m.firstName)
+      .filter(Boolean);
+    if (fromMembers.length) return fromMembers.slice(0, 3).join(", ");
     const names = new Set(
       thread?.messages
         .filter((m) => m.userId !== me?.user?.id)
@@ -228,7 +241,7 @@ export default function ThreadScreen() {
         .filter(Boolean) ?? [],
     );
     return Array.from(names).slice(0, 3).join(", ") || "Your group";
-  }, [thread?.messages, me?.user?.id]);
+  }, [thread?.members, thread?.messages, me?.user?.id]);
 
   const { dayTitle, nightDay } = useMemo(() => {
     const night = thread?.nightDate;
@@ -317,7 +330,7 @@ export default function ThreadScreen() {
             when={whenLabel}
             place={placeLabel}
             onWherePress={() => setShowPicker(true)}
-            onClose={() => router.replace("/sunday")}
+            onClose={closeThread}
             directionsUrl={directionsUrl}
           />
         ) : (
@@ -327,7 +340,7 @@ export default function ThreadScreen() {
               subtitle={`You, ${memberNames}`}
               countdown={countdown}
               countdownSub={countdownSub}
-              onClose={() => router.replace("/sunday")}
+              onClose={closeThread}
             />
             <PlanBar
               when={whenLabel}

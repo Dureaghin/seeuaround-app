@@ -100,12 +100,6 @@ export default function InviteLinkScreen() {
         <Spacer />
         <Actions>
           <Button label="Get See U Around" onPress={connect} loading={loading} />
-          <Button
-            label="I already have it"
-            onPress={connect}
-            variant="ghost"
-            loading={loading}
-          />
         </Actions>
         <SmallPrint>
           18+ · This link stops working in 7 days{"\n"}

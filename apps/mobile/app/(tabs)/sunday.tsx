@@ -1,20 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { routeToPath } from "../../src/lib/resolveRoute";
 import { api } from "../../src/lib/api";
 import { useApp } from "../../src/context/AppContext";
 import { TabEyebrow } from "../../src/components/AccountSheet";
 import {
   ErrText,
-  Actions,
   ActiveThreadLink,
-  Button,
   Headline,
   NightStrip,
   QuietLink,
   Screen,
-  Spacer,
   Sub,
   WeekTally,
   uiStyles,
@@ -26,30 +22,60 @@ export default function SundayScreen() {
   const router = useRouter();
   const { me, refresh } = useApp();
   const [nights, setNights] = useState<Night[]>([]);
-  const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState("");
+  const pending = useRef<Night[] | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saving = useRef(false);
 
   useEffect(() => {
     api.getWeek().then((r) => setNights(r.nights)).catch(() => {});
     void refresh();
   }, [refresh]);
 
-  function toggle(i: number) {
-    setError("");
-    setNights((prev) => prev.map((n, idx) => (idx === i ? { ...n, free: !n.free } : n)));
-  }
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (pending.current && !saving.current) {
+        void api.setWeek(pending.current.map(({ date, free }) => ({ date, free }))).catch(() => {});
+      }
+    };
+  }, []);
 
-  async function save() {
-    setSaving(true);
+  async function flushSave() {
+    const snapshot = pending.current;
+    if (!snapshot || saving.current) return;
+    saving.current = true;
+    setSaveState("saving");
     setError("");
     try {
-      const state = await api.setWeek(nights.map(({ date, free }) => ({ date, free })));
-      router.replace(routeToPath(state) as never);
+      await api.setWeek(snapshot.map(({ date, free }) => ({ date, free })));
+      pending.current = null;
+      await refresh();
+      setSaveState("saved");
     } catch {
       setError("Could not save your week. Check your connection and try again.");
+      setSaveState("idle");
     } finally {
-      setSaving(false);
+      saving.current = false;
     }
+  }
+
+  function scheduleSave(next: Night[]) {
+    pending.current = next;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      void flushSave();
+    }, 600);
+  }
+
+  function toggle(i: number) {
+    setError("");
+    setNights((prev) => {
+      const next = prev.map((n, idx) => (idx === i ? { ...n, free: !n.free } : n));
+      scheduleSave(next);
+      return next;
+    });
   }
 
   const litCount = nights.filter((n) => n.free).length;
@@ -76,7 +102,10 @@ export default function SundayScreen() {
       <Sub>Tap the nights you're up for. Clears Monday morning.</Sub>
 
       <NightStrip nights={nights} onToggle={toggle} />
-      <WeekTally count={litCount} />
+      <WeekTally
+        count={litCount}
+        saveLabel={saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : undefined}
+      />
 
       {showThread ? (
         <ActiveThreadLink
@@ -87,11 +116,7 @@ export default function SundayScreen() {
         />
       ) : null}
 
-      <Spacer />
       {error ? <ErrText>{error}</ErrText> : null}
-      <Actions>
-        <Button label={saving ? "Saving…" : "Save"} onPress={save} loading={saving} />
-      </Actions>
       <View style={uiStyles.weekFoot}>
         <Text style={uiStyles.quiethours}>
           Answer whenever. Nobody gets pinged before 8am their time.
